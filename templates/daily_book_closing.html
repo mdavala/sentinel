@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block header %}Daily Book Closing Records{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-book"></i> Daily Book Closing Records</h5>
+        <div class="d-flex gap-2 align-items-center">
+            <a href="{{ url_for('add_daily_book_closing') }}" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus"></i> Add Record
+            </a>
+            <div class="input-group" style="width: 300px;">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search records...">
+                <button class="btn btn-outline-secondary" type="button" id="searchBtn">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="loadingMessage" class="alert alert-info">Loading data...</div>
+        <div id="errorMessage" class="alert alert-danger" style="display: none;"></div>
+        
+        <div class="table-responsive">
+            <table id="dailyBookTable" class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Closing Date</th>
+                        <th>Total Sales</th>
+                        <th>Transactions</th>
+                        <th>Avg per Transaction</th>
+                        <th>Cash Amount</th>
+                        <th>Processed At</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for viewing details -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Daily Book Closing Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalBody">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    console.log('Daily Book Closing page loaded');
+    console.log('jQuery version:', $.fn.jquery);
+    console.log('DataTables available:', typeof $.fn.DataTable !== 'undefined');
+    
+    // Check if DataTables is available
+    if (typeof $.fn.DataTable === 'undefined') {
+        $('#errorMessage').text('DataTables library not loaded. Please refresh the page.').show();
+        $('#loadingMessage').hide();
+        return;
+    }
+    
+    // Initialize DataTable
+    try {
+        let table = $('#dailyBookTable').DataTable({
+            "processing": true,
+            "serverSide": false,
+            "ajax": {
+                "url": "/api/daily-book-closing",
+                "type": "GET",
+                "dataSrc": function(json) {
+                    console.log('DataTable received data:', json);
+                    $('#loadingMessage').hide();
+                    if (json.error) {
+                        $('#errorMessage').text('Error loading data: ' + json.error).show();
+                        return [];
+                    }
+                    return json.data || [];
+                },
+                "error": function(xhr, error, code) {
+                    console.error('DataTable AJAX error:', error, code, xhr.responseText);
+                    $('#loadingMessage').hide();
+                    $('#errorMessage').text('Error loading data: ' + error).show();
+                }
+            },
+            "columns": [
+                {"data": "id"},
+                {"data": "closing_date"},
+                {
+                    "data": "total_sales", 
+                    "render": function(data) { 
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; 
+                    }
+                },
+                {"data": "number_of_transactions"},
+                {
+                    "data": "average_sales_per_transaction", 
+                    "render": function(data) { 
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; 
+                    }
+                },
+                {
+                    "data": "cash_amount", 
+                    "render": function(data) { 
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; 
+                    }
+                },
+                {"data": "processed_at"},
+                {
+                    "data": null,
+                    "orderable": false,
+                    "render": function(data, type, row) {
+                        return `
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm btn-primary" onclick="showDetails(${row.id})" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <a href="/daily-book-closing/edit/${row.id}" class="btn btn-sm btn-warning" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <button class="btn btn-sm btn-danger" onclick="deleteRecord(${row.id})" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        `;
+                    }
+                }
+            ],
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "language": {
+                "processing": "Loading data...",
+                "emptyTable": "No data available in table"
+            }
+        });
+        
+        // Store table reference globally for search function
+        window.dailyBookTable = table;
+        
+    } catch (error) {
+        console.error('Error initializing DataTable:', error);
+        $('#loadingMessage').hide();
+        $('#errorMessage').text('Error initializing table: ' + error.message).show();
+    }
+
+    // Search functionality
+    $('#searchBtn').click(function() {
+        let searchTerm = $('#searchInput').val();
+        console.log('Searching for:', searchTerm);
+        
+        if (searchTerm && window.dailyBookTable) {
+            $.get('/api/search/daily-book-closing?q=' + encodeURIComponent(searchTerm))
+                .done(function(data) {
+                    console.log('Search results:', data);
+                    window.dailyBookTable.clear();
+                    window.dailyBookTable.rows.add(data.data || []);
+                    window.dailyBookTable.draw();
+                })
+                .fail(function(xhr, status, error) {
+                    console.error('Search error:', error);
+                    alert('Search failed: ' + error);
+                });
+        } else if (window.dailyBookTable) {
+            window.dailyBookTable.ajax.reload();
+        }
+    });
+
+    $('#searchInput').keypress(function(e) {
+        if(e.which == 13) {
+            $('#searchBtn').click();
+        }
+    });
+
+    $('#searchInput').on('input', function() {
+        if($(this).val() === '' && window.dailyBookTable) {
+            window.dailyBookTable.ajax.reload();
+        }
+    });
+});
+
+// Global function for showing details
+function showDetails(recordId) {
+    console.log('Showing details for record ID:', recordId);
+    
+    $.get('/api/daily-book-closing')
+        .done(function(data) {
+            let record = data.data.find(r => r.id === recordId);
+            if (record) {
+                let html = '<div class="row">';
+                for(let key in record) {
+                    if(record[key] !== null && record[key] !== '' && record[key] !== undefined) {
+                        let displayKey = key.replace(/_/g, ' ').toUpperCase();
+                        let displayValue = record[key];
+                        
+                        // Format monetary values
+                        if(key.includes('amount') || key.includes('sales') || key === 'total_settlement') {
+                            if(!isNaN(displayValue)) {
+                                displayValue = '$' + parseFloat(displayValue).toFixed(2);
+                            }
+                        }
+                        
+                        html += '<div class="col-md-6 mb-2"><strong>' + displayKey + ':</strong> ' + displayValue + '</div>';
+                    }
+                }
+                html += '</div>';
+                $('#modalBody').html(html);
+                $('#detailModal').modal('show');
+            } else {
+                alert('Record not found');
+            }
+        })
+        .fail(function(xhr, status, error) {
+            console.error('Error fetching record details:', error);
+            alert('Error loading record details: ' + error);
+        });
+}
+
+// Global function for deleting records
+function deleteRecord(recordId) {
+    if (confirm('Are you sure you want to delete this record? This action cannot be undone.')) {
+        // Create a form and submit it for DELETE request
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/daily-book-closing/delete/${recordId}`;
+        form.style.display = 'none';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block header %}Invoice Records{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-file-invoice"></i> Invoice Records</h5>
+        <div class="input-group" style="width: 300px;">
+            <input type="text" id="searchInput" class="form-control" placeholder="Search invoices...">
+            <button class="btn btn-outline-secondary" type="button" id="searchBtn">
+                <i class="fas fa-search"></i>
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table id="invoicesTable" class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Invoice Number</th>
+                        <th>Supplier</th>
+                        <th>Item Name</th>
+                        <th>Quantity</th>
+                        <th>Unit Price</th>
+                        <th>Total Amount</th>
+                        <th>Invoice Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Invoice Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalBody">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    console.log('Initializing Invoices DataTable...');
+    
+    let table = $('#invoicesTable').DataTable({
+        "processing": true,
+        "serverSide": false,
+        "ajax": {
+            "url": "/api/invoices",
+            "type": "GET",
+            "dataSrc": "data",
+            "error": function(xhr, error, code) {
+                console.error('Invoices DataTable AJAX error:', error, code, xhr.responseText);
+                alert('Error loading invoices data: ' + error);
+            }
+        },
+        "columns": [
+            {"data": "id"},
+            {"data": "invoice_number"},
+            {"data": "supplier_name"},
+            {"data": "item_name"},
+            {"data": "quantity"},
+            {"data": "unit_price", "render": function(data) { return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; }},
+            {"data": "total_amount", "render": function(data) { return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; }},
+            {"data": "invoice_date"},
+            {
+                "data": null,
+                "orderable": false,
+                "render": function(data, type, row) {
+                    return '<button class="btn btn-sm btn-primary" onclick="showDetails(' + row.id + ')"><i class="fas fa-eye"></i> View</button>';
+                }
+            }
+        ],
+        "order": [[ 0, "desc" ]],
+        "pageLength": 25,
+        "language": {
+            "processing": "Loading invoices...",
+            "emptyTable": "No invoice records found"
+        }
+    });
+
+    $('#searchBtn').click(function() {
+        let searchTerm = $('#searchInput').val();
+        console.log('Searching invoices for:', searchTerm);
+        
+        if(searchTerm) {
+            $.get('/api/search/invoices?q=' + encodeURIComponent(searchTerm))
+                .done(function(data) {
+                    console.log('Invoice search results:', data);
+                    table.clear();
+                    table.rows.add(data.data);
+                    table.draw();
+                })
+                .fail(function(xhr, status, error) {
+                    console.error('Invoice search error:', error);
+                    alert('Invoice search failed: ' + error);
+                });
+        } else {
+            table.ajax.reload();
+        }
+    });
+
+    $('#searchInput').keypress(function(e) {
+        if(e.which == 13) {
+            $('#searchBtn').click();
+        }
+    });
+
+    $('#searchInput').on('input', function() {
+        if($(this).val() === '') {
+            table.ajax.reload();
+        }
+    });
+});
+
+function showDetails(id) {
+    console.log('Showing invoice details for ID:', id);
+    
+    $.get('/api/invoices')
+        .done(function(data) {
+            let record = data.data.find(r => r.id === id);
+            if(record) {
+                let html = '<div class="row">';
+                for(let key in record) {
+                    if(record[key] !== null && record[key] !== '' && record[key] !== undefined) {
+                        let displayKey = key.replace(/_/g, ' ').toUpperCase();
+                        let displayValue = record[key];
+                        
+                        // Format monetary values
+                        if(key.includes('amount') || key.includes('price')) {
+                            if(!isNaN(displayValue)) {
+                                displayValue = '$' + parseFloat(displayValue).toFixed(2);
+                            }
+                        }
+                        
+                        html += '<div class="col-md-6 mb-3"><strong>' + displayKey + ':</strong> ' + displayValue + '</div>';
+                    }
+                }
+                html += '</div>';
+                $('#modalBody').html(html);
+                $('#detailModal').modal('show');
+            } else {
+                alert('Invoice record not found');
+            }
+        })
+        .fail(function(xhr, status, error) {
+            console.error('Error fetching invoice details:', error);
+            alert('Error loading invoice details: ' + error);
+        });
+}
+</script>
+{% endblock %}

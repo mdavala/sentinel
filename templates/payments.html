@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block header %}Payment Records{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-credit-card"></i> Payment Records</h5>
+        <div class="input-group" style="width: 300px;">
+            <input type="text" id="searchInput" class="form-control" placeholder="Search payments...">
+            <button class="btn btn-outline-secondary" type="button" id="searchBtn">
+                <i class="fas fa-search"></i>
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table id="paymentsTable" class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Invoice Number</th>
+                        <th>Supplier</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Due Date</th>
+                        <th>Payment Type</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Payment Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalBody">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    console.log('Initializing Payments DataTable...');
+    
+    let table = $('#paymentsTable').DataTable({
+        "processing": true,
+        "serverSide": false,
+        "ajax": {
+            "url": "/api/payments",
+            "type": "GET",
+            "dataSrc": "data",
+            "error": function(xhr, error, code) {
+                console.error('Payments DataTable AJAX error:', error, code, xhr.responseText);
+                alert('Error loading payments data: ' + error);
+            }
+        },
+        "columns": [
+            {"data": "id"},
+            {"data": "invoice_number"},
+            {"data": "supplier_name"},
+            {"data": "total_amount", "render": function(data) { return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; }},
+            {
+                "data": "payment_status", 
+                "render": function(data) { 
+                    let status = data || 'Unknown';
+                    let badgeClass = status.toLowerCase() === 'paid' ? 'bg-success' : 
+                                   status.toLowerCase() === 'pending' ? 'bg-warning' : 'bg-secondary';
+                    return '<span class="badge ' + badgeClass + '">' + status + '</span>';
+                }
+            },
+            {"data": "payment_due_date"},
+            {"data": "payment_type"},
+            {
+                "data": null,
+                "orderable": false,
+                "render": function(data, type, row) {
+                    return '<button class="btn btn-sm btn-primary" onclick="showDetails(' + row.id + ')"><i class="fas fa-eye"></i> View</button>';
+                }
+            }
+        ],
+        "order": [[ 0, "desc" ]],
+        "pageLength": 25,
+        "language": {
+            "processing": "Loading payments...",
+            "emptyTable": "No payment records found"
+        }
+    });
+
+    $('#searchBtn').click(function() {
+        let searchTerm = $('#searchInput').val();
+        console.log('Searching payments for:', searchTerm);
+        
+        if(searchTerm) {
+            $.get('/api/search/payments?q=' + encodeURIComponent(searchTerm))
+                .done(function(data) {
+                    console.log('Payment search results:', data);
+                    table.clear();
+                    table.rows.add(data.data);
+                    table.draw();
+                })
+                .fail(function(xhr, status, error) {
+                    console.error('Payment search error:', error);
+                    alert('Payment search failed: ' + error);
+                });
+        } else {
+            table.ajax.reload();
+        }
+    });
+
+    $('#searchInput').keypress(function(e) {
+        if(e.which == 13) {
+            $('#searchBtn').click();
+        }
+    });
+
+    $('#searchInput').on('input', function() {
+        if($(this).val() === '') {
+            table.ajax.reload();
+        }
+    });
+});
+
+function showDetails(id) {
+    console.log('Showing payment details for ID:', id);
+    
+    $.get('/api/payments')
+        .done(function(data) {
+            let record = data.data.find(r => r.id === id);
+            if(record) {
+                let html = '<div class="row">';
+                for(let key in record) {
+                    if(record[key] !== null && record[key] !== '' && record[key] !== undefined) {
+                        let displayKey = key.replace(/_/g, ' ').toUpperCase();
+                        let displayValue = record[key];
+                        
+                        // Format monetary values
+                        if(key.includes('amount')) {
+                            if(!isNaN(displayValue)) {
+                                displayValue = '$' + parseFloat(displayValue).toFixed(2);
+                            }
+                        }
+                        
+                        html += '<div class="col-md-6 mb-2"><strong>' + displayKey + ':</strong> ' + displayValue + '</div>';
+                    }
+                }
+                html += '</div>';
+                $('#modalBody').html(html);
+                $('#detailModal').modal('show');
+            } else {
+                alert('Payment record not found');
+            }
+        })
+        .fail(function(xhr, status, error) {
+            console.error('Error fetching payment details:', error);
+            alert('Error loading payment details: ' + error);
+        });
+}
+</script>
+{% endblock %}

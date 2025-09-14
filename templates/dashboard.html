@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-4 mb-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">{{ daily_book_count }}</h4>
+                        <p class="card-text">Daily Book Records</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-book fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">{{ payments_count }}</h4>
+                        <p class="card-text">Payment Records</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-credit-card fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">{{ invoice_count }}</h4>
+                        <p class="card-text">Invoice Records</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-file-invoice fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-book"></i> Latest Daily Book Closing</h5>
+            </div>
+            <div class="card-body">
+                {% if latest_daily_book %}
+                    {% if latest_daily_book is mapping %}
+                        <p><strong>Date:</strong> {{ latest_daily_book.get('closing_date', 'N/A') }}</p>
+                        <p><strong>Total Sales:</strong> ${{ "%.2f"|format(latest_daily_book.get('total_sales', 0) or 0) }}</p>
+                        <p><strong>Transactions:</strong> {{ latest_daily_book.get('number_of_transactions', 0) or 0 }}</p>
+                        <p><strong>Cash Amount:</strong> ${{ "%.2f"|format(latest_daily_book.get('cash_amount', 0) or 0) }}</p>
+                        <p><strong>Processed:</strong> {{ latest_daily_book.get('processed_at', 'N/A') }}</p>
+                    {% else %}
+                        <p><strong>Date:</strong> {{ latest_daily_book.closing_date or 'N/A' }}</p>
+                        <p><strong>Total Sales:</strong> ${{ "%.2f"|format(latest_daily_book.total_sales or 0) }}</p>
+                        <p><strong>Transactions:</strong> {{ latest_daily_book.number_of_transactions or 0 }}</p>
+                        <p><strong>Cash Amount:</strong> ${{ "%.2f"|format(latest_daily_book.cash_amount or 0) }}</p>
+                        <p><strong>Processed:</strong> {{ latest_daily_book.processed_at or 'N/A' }}</p>
+                    {% endif %}
+                {% else %}
+                    <p class="text-muted">No records found</p>
+                {% endif %}
+                <a href="{{ url_for('daily_book_closing') }}" class="btn btn-primary btn-sm">View All</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-credit-card"></i> Latest Payment</h5>
+            </div>
+            <div class="card-body">
+                {% if latest_payment %}
+                    {% if latest_payment is mapping %}
+                        <p><strong>Invoice:</strong> {{ latest_payment.get('invoice_number', 'N/A') }}</p>
+                        <p><strong>Supplier:</strong> {{ latest_payment.get('supplier_name', 'N/A') }}</p>
+                        <p><strong>Amount:</strong> ${{ "%.2f"|format(latest_payment.get('total_amount', 0) or 0) }}</p>
+                        <p><strong>Status:</strong> 
+                            {% set status = latest_payment.get('payment_status', 'Unknown') %}
+                            <span class="badge bg-{{ 'success' if status == 'paid' else 'warning' }}">
+                                {{ status }}
+                            </span>
+                        </p>
+                        <p><strong>Due Date:</strong> {{ latest_payment.get('payment_due_date', 'N/A') }}</p>
+                    {% else %}
+                        <p><strong>Invoice:</strong> {{ latest_payment.invoice_number or 'N/A' }}</p>
+                        <p><strong>Supplier:</strong> {{ latest_payment.supplier_name or 'N/A' }}</p>
+                        <p><strong>Amount:</strong> ${{ "%.2f"|format(latest_payment.total_amount or 0) }}</p>
+                        <p><strong>Status:</strong> 
+                            <span class="badge bg-{{ 'success' if latest_payment.payment_status == 'paid' else 'warning' }}">
+                                {{ latest_payment.payment_status or 'Unknown' }}
+                            </span>
+                        </p>
+                        <p><strong>Due Date:</strong> {{ latest_payment.payment_due_date or 'N/A' }}</p>
+                    {% endif %}
+                {% else %}
+                    <p class="text-muted">No records found</p>
+                {% endif %}
+                <a href="{{ url_for('payments') }}" class="btn btn-success btn-sm">View All</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-file-invoice"></i> Latest Invoice</h5>
+            </div>
+            <div class="card-body">
+                {% if latest_invoice %}
+                    {% if latest_invoice is mapping %}
+                        <p><strong>Invoice:</strong> {{ latest_invoice.get('invoice_number', 'N/A') }}</p>
+                        <p><strong>Supplier:</strong> {{ latest_invoice.get('supplier_name', 'N/A') }}</p>
+                        <p><strong>Item:</strong> {{ latest_invoice.get('item_name', 'N/A') }}</p>
+                        <p><strong>Quantity:</strong> {{ latest_invoice.get('quantity', 0) or 0 }}</p>
+                        <p><strong>Amount:</strong> ${{ "%.2f"|format(latest_invoice.get('total_amount', 0) or 0) }}</p>
+                    {% else %}
+                        <p><strong>Invoice:</strong> {{ latest_invoice.invoice_number or 'N/A' }}</p>
+                        <p><strong>Supplier:</strong> {{ latest_invoice.supplier_name or 'N/A' }}</p>
+                        <p><strong>Item:</strong> {{ latest_invoice.item_name or 'N/A' }}</p>
+                        <p><strong>Quantity:</strong> {{ latest_invoice.quantity or 0 }}</p>
+                        <p><strong>Amount:</strong> ${{ "%.2f"|format(latest_invoice.total_amount or 0) }}</p>
+                    {% endif %}
+                {% else %}
+                    <p class="text-muted">No records found</p>
+                {% endif %}
+                <a href="{{ url_for('invoices') }}" class="btn btn-info btn-sm">View All</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Debug Information (remove this in production) -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-light">
+            <div class="card-header">
+                <h6>Debug Info (Remove in Production)</h6>
+            </div>
+            <div class="card-body">
+                <small>
+                    Daily Book Count: {{ daily_book_count }} | 
+                    Payments Count: {{ payments_count }} | 
+                    Invoice Count: {{ invoice_count }}
+                    <br>
+                    Data Types: 
+                    Daily Book Type: {{ latest_daily_book.__class__.__name__ if latest_daily_book else 'None' }} |
+                    Payment Type: {{ latest_payment.__class__.__name__ if latest_payment else 'None' }} |
+                    Invoice Type: {{ latest_invoice.__class__.__name__ if latest_invoice else 'None' }}
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block header %}Test DataTable{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Test API Data Loading</h5>
+    </div>
+    <div class="card-body">
+        <button id="testApi" class="btn btn-primary mb-3">Test API Call</button>
+        <div id="apiResult" class="mb-3"></div>
+        
+        <div class="table-responsive">
+            <table id="testTable" class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Closing Date</th>
+                        <th>Total Sales</th>
+                        <th>Transactions</th>
+                        <th>Cash Amount</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    console.log('Test page loaded');
+    
+    // Test API call button
+    $('#testApi').click(function() {
+        console.log('Testing API call...');
+        $.get('/api/daily-book-closing')
+            .done(function(data) {
+                console.log('API Response:', data);
+                $('#apiResult').html('<pre>' + JSON.stringify(data, null, 2) + '</pre>');
+                
+                // Try to populate table manually
+                if (data.data && data.data.length > 0) {
+                    let tbody = $('#testTable tbody');
+                    tbody.empty();
+                    
+                    data.data.forEach(function(record) {
+                        let row = '<tr>' +
+                            '<td>' + record.id + '</td>' +
+                            '<td>' + record.closing_date + '</td>' +
+                            '<td>$' + parseFloat(record.total_sales || 0).toFixed(2) + '</td>' +
+                            '<td>' + (record.number_of_transactions || 0) + '</td>' +
+                            '<td>$' + parseFloat(record.cash_amount || 0).toFixed(2) + '</td>' +
+                        '</tr>';
+                        tbody.append(row);
+                    });
+                } else {
+                    $('#testTable tbody').html('<tr><td colspan="5">No data received</td></tr>');
+                }
+            })
+            .fail(function(xhr, status, error) {
+                console.error('API Error:', error, xhr.responseText);
+                $('#apiResult').html('<div class="alert alert-danger">Error: ' + error + '</div>');
+            });
+    });
+    
+    // Initialize empty DataTable
+    let table = $('#testTable').DataTable({
+        "paging": false,
+        "searching": false,
+        "info": false
+    });
+});
+</script>
+{% endblock %}
