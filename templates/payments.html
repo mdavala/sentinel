@@ -6,14 +6,22 @@
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="fas fa-credit-card"></i> Payment Records</h5>
-        <div class="input-group" style="width: 300px;">
-            <input type="text" id="searchInput" class="form-control" placeholder="Search payments...">
-            <button class="btn btn-outline-secondary" type="button" id="searchBtn">
-                <i class="fas fa-search"></i>
-            </button>
+        <div class="d-flex gap-2 align-items-center">
+            <a href="{{ url_for('add_payment') }}" class="btn btn-success btn-sm">
+                <i class="fas fa-plus"></i> Add Payment
+            </a>
+            <div class="input-group" style="width: 300px;">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search payments...">
+                <button class="btn btn-outline-secondary" type="button" id="searchBtn">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
         </div>
     </div>
     <div class="card-body">
+        <div id="loadingMessage" class="alert alert-info">Loading data...</div>
+        <div id="errorMessage" class="alert alert-danger" style="display: none;"></div>
+        
         <div class="table-responsive">
             <table id="paymentsTable" class="table table-striped table-hover">
                 <thead class="table-dark">
@@ -52,70 +60,118 @@
 {% block scripts %}
 <script>
 $(document).ready(function() {
-    console.log('Initializing Payments DataTable...');
+    console.log('Payments page loaded');
+    console.log('jQuery version:', $.fn.jquery);
+    console.log('DataTables available:', typeof $.fn.DataTable !== 'undefined');
     
-    let table = $('#paymentsTable').DataTable({
-        "processing": true,
-        "serverSide": false,
-        "ajax": {
-            "url": "/api/payments",
-            "type": "GET",
-            "dataSrc": "data",
-            "error": function(xhr, error, code) {
-                console.error('Payments DataTable AJAX error:', error, code, xhr.responseText);
-                alert('Error loading payments data: ' + error);
-            }
-        },
-        "columns": [
-            {"data": "id"},
-            {"data": "invoice_number"},
-            {"data": "supplier_name"},
-            {"data": "total_amount", "render": function(data) { return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; }},
-            {
-                "data": "payment_status", 
-                "render": function(data) { 
-                    let status = data || 'Unknown';
-                    let badgeClass = status.toLowerCase() === 'paid' ? 'bg-success' : 
-                                   status.toLowerCase() === 'pending' ? 'bg-warning' : 'bg-secondary';
-                    return '<span class="badge ' + badgeClass + '">' + status + '</span>';
+    // Check if DataTables is available
+    if (typeof $.fn.DataTable === 'undefined') {
+        $('#errorMessage').text('DataTables library not loaded. Please refresh the page.').show();
+        $('#loadingMessage').hide();
+        return;
+    }
+    
+    // Initialize DataTable
+    try {
+        let table = $('#paymentsTable').DataTable({
+            "processing": true,
+            "serverSide": false,
+            "ajax": {
+                "url": "/api/payments",
+                "type": "GET",
+                "dataSrc": function(json) {
+                    console.log('Payments DataTable received data:', json);
+                    $('#loadingMessage').hide();
+                    if (json.error) {
+                        $('#errorMessage').text('Error loading data: ' + json.error).show();
+                        return [];
+                    }
+                    return json.data || [];
+                },
+                "error": function(xhr, error, code) {
+                    console.error('Payments DataTable AJAX error:', error, code, xhr.responseText);
+                    $('#loadingMessage').hide();
+                    $('#errorMessage').text('Error loading data: ' + error).show();
                 }
             },
-            {"data": "payment_due_date"},
-            {"data": "payment_type"},
-            {
-                "data": null,
-                "orderable": false,
-                "render": function(data, type, row) {
-                    return '<button class="btn btn-sm btn-primary" onclick="showDetails(' + row.id + ')"><i class="fas fa-eye"></i> View</button>';
+            "columns": [
+                {"data": "id"},
+                {"data": "invoice_number"},
+                {"data": "supplier_name"},
+                {
+                    "data": "total_amount", 
+                    "render": function(data) { 
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; 
+                    }
+                },
+                {
+                    "data": "payment_status", 
+                    "render": function(data) { 
+                        let status = data || 'Unknown';
+                        let badgeClass = status.toLowerCase() === 'paid' ? 'bg-success' : 
+                                       status.toLowerCase() === 'pending' ? 'bg-warning' : 
+                                       status.toLowerCase() === 'overdue' ? 'bg-danger' : 'bg-secondary';
+                        return '<span class="badge ' + badgeClass + '">' + status + '</span>';
+                    }
+                },
+                {"data": "payment_due_date"},
+                {"data": "payment_type"},
+                {
+                    "data": null,
+                    "orderable": false,
+                    "render": function(data, type, row) {
+                        return `
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm btn-primary" onclick="showDetails(${row.id})" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <a href="/payments/edit/${row.id}" class="btn btn-sm btn-warning" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <button class="btn btn-sm btn-danger" onclick="deleteRecord(${row.id})" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        `;
+                    }
                 }
+            ],
+            "order": [[ 0, "desc" ]],
+            "pageLength": 25,
+            "language": {
+                "processing": "Loading payments...",
+                "emptyTable": "No payment records found"
             }
-        ],
-        "order": [[ 0, "desc" ]],
-        "pageLength": 25,
-        "language": {
-            "processing": "Loading payments...",
-            "emptyTable": "No payment records found"
-        }
-    });
+        });
+        
+        // Store table reference globally for search function
+        window.paymentsTable = table;
+        
+    } catch (error) {
+        console.error('Error initializing Payments DataTable:', error);
+        $('#loadingMessage').hide();
+        $('#errorMessage').text('Error initializing table: ' + error.message).show();
+    }
 
+    // Search functionality
     $('#searchBtn').click(function() {
         let searchTerm = $('#searchInput').val();
         console.log('Searching payments for:', searchTerm);
         
-        if(searchTerm) {
+        if (searchTerm && window.paymentsTable) {
             $.get('/api/search/payments?q=' + encodeURIComponent(searchTerm))
                 .done(function(data) {
                     console.log('Payment search results:', data);
-                    table.clear();
-                    table.rows.add(data.data);
-                    table.draw();
+                    window.paymentsTable.clear();
+                    window.paymentsTable.rows.add(data.data || []);
+                    window.paymentsTable.draw();
                 })
                 .fail(function(xhr, status, error) {
                     console.error('Payment search error:', error);
                     alert('Payment search failed: ' + error);
                 });
-        } else {
-            table.ajax.reload();
+        } else if (window.paymentsTable) {
+            window.paymentsTable.ajax.reload();
         }
     });
 
@@ -126,19 +182,20 @@ $(document).ready(function() {
     });
 
     $('#searchInput').on('input', function() {
-        if($(this).val() === '') {
-            table.ajax.reload();
+        if($(this).val() === '' && window.paymentsTable) {
+            window.paymentsTable.ajax.reload();
         }
     });
 });
 
-function showDetails(id) {
-    console.log('Showing payment details for ID:', id);
+// Global function for showing details
+function showDetails(recordId) {
+    console.log('Showing payment details for record ID:', recordId);
     
     $.get('/api/payments')
         .done(function(data) {
-            let record = data.data.find(r => r.id === id);
-            if(record) {
+            let record = data.data.find(r => r.id === recordId);
+            if (record) {
                 let html = '<div class="row">';
                 for(let key in record) {
                     if(record[key] !== null && record[key] !== '' && record[key] !== undefined) {
@@ -166,6 +223,19 @@ function showDetails(id) {
             console.error('Error fetching payment details:', error);
             alert('Error loading payment details: ' + error);
         });
+}
+
+// Global function for deleting records
+function deleteRecord(recordId) {
+    if (confirm('Are you sure you want to delete this payment record? This action cannot be undone.')) {
+        // Create a form and submit it for DELETE request
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/payments/delete/${recordId}`;
+        form.style.display = 'none';
+        document.body.appendChild(form);
+        form.submit();
+    }
 }
 </script>
 {% endblock %}
