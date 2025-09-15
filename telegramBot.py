@@ -4,7 +4,6 @@ import os
 import tempfile
 import logging
 from datetime import datetime
-from dotenv import load_dotenv
 
 # Google Drive imports (OAuth2 - same as stockSentinel.py)
 from google.auth.transport.requests import Request
@@ -21,9 +20,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-load_dotenv(override=True)
-# Bot configuration
+from dotenv import load_dotenv
+load_dotenv()
+
+# Bot configuration - Added error checking for BOT_TOKEN
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    print("❌ Error: BOT_TOKEN environment variable not set!")
+    print("Please set your bot token: export BOT_TOKEN='your_bot_token_here'")
+    exit(1)
+
 BOTNAME = "@ddSentinel_Bot"
 
 # Google Drive folder IDs
@@ -35,8 +41,17 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 CREDENTIALS_FILE = 'credentials.json'
 TOKEN_FILE = 'token.json'
 
-# Global variable to store user states
+# Global variable to store user states and upload counters
 user_states = {}
+upload_counters = {}  # Added missing upload_counters dictionary
+
+def generate_random_filename(mode, counter):
+    """Generate a filename with timestamp and counter"""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if mode == 'upload_invoices':
+        return f"invoice_{timestamp}_{counter}.jpg"
+    else:  # upload_dailybookclosing
+        return f"dailybook_{timestamp}_{counter}.jpg"
 
 class DriveUploader:
     def __init__(self):
@@ -182,6 +197,9 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     folder_id = user_state['folder_id']
     
     if update.message and update.message.photo:
+        processing_msg = None
+        temp_file_path = None
+        
         try:
             # Send processing message
             processing_msg = await update.message.reply_text("⏳ Processing photo...")
@@ -196,45 +214,88 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Download photo to temporary file
             await file.download_to_drive(temp_file_path)
+            logger.info(f"Photo downloaded successfully to {temp_file_path}")
             
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Increment upload counter for this user
+            upload_counters[user_id] = upload_counters.get(user_id, 0) + 1
             
+            # Generate simple random filename
+            filename = generate_random_filename(mode, upload_counters[user_id])
+            logger.info(f"Generated filename: {filename}")
+            
+            # Set folder name for display
             if mode == 'upload_invoices':
-                filename = f"invoice_{timestamp}_{file.file_id}.jpg"
                 folder_name = "Invoices"
             else:  # upload_dailybookclosing
-                filename = f"daily_closing_{timestamp}_{file.file_id}.jpg"
                 folder_name = "Daily Book Closing"
             
             # Upload to Google Drive
+            logger.info(f"Starting upload to Google Drive...")
             uploaded_file = drive_uploader.upload_file(temp_file_path, folder_id, filename)
             
-            # Clean up temporary file
-            os.unlink(temp_file_path)
-            
-            # Update processing message with result
             if uploaded_file:
-                success_message = f"""
-✅ **Photo uploaded successfully!**
+                logger.info(f"Upload successful: {uploaded_file.get('name')}")
+                
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_file_path)
+                    logger.info("Temporary file cleaned up")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup temp file: {cleanup_error}")
+                
+                # Update processing message with result
+                try:
+                    success_message = f"""✅ **Photo uploaded successfully!**
 
 📁 Folder: {folder_name}
 📄 File: {filename}
 🔗 [View on Drive]({uploaded_file.get('webViewLink', '#')})
 
-Send more photos or use another command when done.
-                """
-                await processing_msg.edit_text(success_message, parse_mode='Markdown')
+Send more photos or use another command when done."""
+                    
+                    await processing_msg.edit_text(success_message, parse_mode='Markdown')
+                    logger.info("Success message sent to user")
+                    
+                except Exception as message_error:
+                    logger.error(f"Failed to edit message: {message_error}")
+                    # Try sending a new message instead
+                    try:
+                        await update.message.reply_text(success_message, parse_mode='Markdown')
+                    except Exception as reply_error:
+                        logger.error(f"Failed to send reply message: {reply_error}")
+                        # Send simple message without markdown
+                        await update.message.reply_text(f"✅ Photo uploaded successfully! File: {filename}")
             else:
+                logger.error("Upload failed - no file returned")
                 await processing_msg.edit_text(
                     "❌ Failed to upload photo to Google Drive. Please check the bot configuration."
                 )
                 
         except Exception as e:
-            logger.error(f"Error processing photo: {e}")
-            await update.message.reply_text(
-                "❌ An error occurred while processing the photo. Please try again."
-            )
+            logger.error(f"Error processing photo: {e}", exc_info=True)
+            
+            # Clean up temp file if it exists
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                    logger.info("Cleaned up temp file after error")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup temp file after error: {cleanup_error}")
+            
+            # Try to update the processing message, or send a new one
+            error_message = "❌ An error occurred while processing the photo. Please try again."
+            try:
+                if processing_msg:
+                    await processing_msg.edit_text(error_message)
+                else:
+                    await update.message.reply_text(error_message)
+            except Exception as msg_error:
+                logger.error(f"Failed to send error message: {msg_error}")
+                # Last resort - try a simple reply
+                try:
+                    await update.message.reply_text("❌ Error occurred during processing.")
+                except:
+                    pass  # Give up if even this fails
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages"""
