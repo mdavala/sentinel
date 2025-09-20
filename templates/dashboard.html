@@ -143,27 +143,3 @@
         </div>
     </div>
 </div>
-
-<!-- Debug Information (remove this in production) -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card bg-light">
-            <div class="card-header">
-                <h6>Debug Info (Remove in Production)</h6>
-            </div>
-            <div class="card-body">
-                <small>
-                    Daily Book Count: {{ daily_book_count }} | 
-                    Payments Count: {{ payments_count }} | 
-                    Invoice Count: {{ invoice_count }}
-                    <br>
-                    Data Types: 
-                    Daily Book Type: {{ latest_daily_book.__class__.__name__ if latest_daily_book else 'None' }} |
-                    Payment Type: {{ latest_payment.__class__.__name__ if latest_payment else 'None' }} |
-                    Invoice Type: {{ latest_invoice.__class__.__name__ if latest_invoice else 'None' }}
-                </small>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
