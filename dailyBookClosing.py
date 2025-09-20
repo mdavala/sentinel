@@ -50,16 +50,13 @@ class DailyBookClosingData(BaseModel):
     # Payment Methods
     nets_qr_amount: Optional[float] = Field(None, description="NETS QR payment amount")
     cash_amount: Optional[float] = Field(None, description="Cash payment amount")
-    aha_credit_amount: Optional[float] = Field(None, description="AhaCredit payment amount")
+    credit_amount: Optional[float] = Field(None, description="Credit payment amount")
     nets_amount: Optional[float] = Field(None, description="NETS payment amount")
     total_settlement: Optional[float] = Field(None, description="Total settlement amount")
     
     # Cash Record
     expected_cash_balance: Optional[float] = Field(None, description="Expected cash balance")
     cash_outs: Optional[List[float]] = Field(None, description="Cash out for salary/expenses")
-    
-    # Credit Information
-    total_credit_given: Optional[float] = Field(None, description="Total credit given to customers")
     
     # Additional fields
     voided_transactions: Optional[int] = Field(None, description="Number of voided transactions")
@@ -85,16 +82,13 @@ class DailyBookClosingTable(Base):
     # Payment Methods
     nets_qr_amount = Column(Float, nullable=True)
     cash_amount = Column(Float, nullable=True)
-    aha_credit_amount = Column(Float, nullable=True)
+    credit_amount = Column(Float, nullable=True)
     nets_amount = Column(Float, nullable=True)
     total_settlement = Column(Float, nullable=True)
     
     # Cash Record
     expected_cash_balance = Column(Float, nullable=True)
     cash_outs = Column(Text, nullable=True)  # Store as JSON string
-    
-    # Credit Information
-    total_credit_given = Column(Float, nullable=True)
     
     # Additional fields
     voided_transactions = Column(Integer, nullable=True)
@@ -149,16 +143,13 @@ def ocr_daily_closing(file_path: str, model: str, api_key: str = TOGETHER_API_KE
         OPTIONAL FIELDS - Payment Methods:
         - nets_qr_amount: NETS QR payment amount
         - cash_amount: Cash payment amount  
-        - aha_credit_amount: AhaCredit payment amount
+        - credit_amount: Total Credit payment amount - AhaCredit + ParthibanCredit + NaveenCredit
         - nets_amount: NETS payment amount
         - total_settlement: Total settlement amount
         
         OPTIONAL FIELDS - Cash Record:
         - expected_cash_balance: Expected cash balance
         - cash_outs: Check for "Cash In / Out History" column in image. Extract only "Cash Out" entries with amounts. This can be single or multiple cash out entries. DO NOT extract from "Cash Sales History" column.
-        
-        OPTIONAL FIELDS - Credit Information:
-        - total_credit_given: Total credit discount given
         
         OPTIONAL FIELDS - Additional:
         - voided_transactions: Number of voided transactions
@@ -229,12 +220,11 @@ def merge_daily_closing_data(json_outputs: List[str]) -> Dict:
         "average_sales_per_transaction": None,
         "nets_qr_amount": None,
         "cash_amount": None,
-        "aha_credit_amount": None,
+        "credit_amount": None,
         "nets_amount": None,
         "total_settlement": None,
         "expected_cash_balance": None,
         "cash_outs": [],
-        "total_credit_given": None,
         "voided_transactions": None,
         "voided_amount": None
     }
@@ -317,12 +307,11 @@ def save_daily_closing_to_db(merged_data: Dict, session):
             existing_record.average_sales_per_transaction = merged_data.get('average_sales_per_transaction') or existing_record.average_sales_per_transaction
             existing_record.nets_qr_amount = merged_data.get('nets_qr_amount') or existing_record.nets_qr_amount
             existing_record.cash_amount = merged_data.get('cash_amount') or existing_record.cash_amount
-            existing_record.aha_credit_amount = merged_data.get('aha_credit_amount') or existing_record.aha_credit_amount
+            existing_record.credit_amount = merged_data.get('credit_amount') or existing_record.credit_amount
             existing_record.nets_amount = merged_data.get('nets_amount') or existing_record.nets_amount
             existing_record.total_settlement = merged_data.get('total_settlement') or existing_record.total_settlement
             existing_record.expected_cash_balance = merged_data.get('expected_cash_balance') or existing_record.expected_cash_balance
             existing_record.cash_outs = cash_outs_json or existing_record.cash_outs
-            existing_record.total_credit_given = merged_data.get('total_credit_given') or existing_record.total_credit_given
             existing_record.voided_transactions = merged_data.get('voided_transactions') or existing_record.voided_transactions
             existing_record.voided_amount = merged_data.get('voided_amount') or existing_record.voided_amount
             existing_record.processed_at = datetime.now()
@@ -335,12 +324,11 @@ def save_daily_closing_to_db(merged_data: Dict, session):
                 average_sales_per_transaction=merged_data.get('average_sales_per_transaction'),
                 nets_qr_amount=merged_data.get('nets_qr_amount'),
                 cash_amount=merged_data.get('cash_amount'),
-                aha_credit_amount=merged_data.get('aha_credit_amount'),
+                credit_amount=merged_data.get('credit_amount'),
                 nets_amount=merged_data.get('nets_amount'),
                 total_settlement=merged_data.get('total_settlement'),
                 expected_cash_balance=merged_data.get('expected_cash_balance'),
                 cash_outs=cash_outs_json,
-                total_credit_given=merged_data.get('total_credit_given'),
                 voided_transactions=merged_data.get('voided_transactions'),
                 voided_amount=merged_data.get('voided_amount')
             )
