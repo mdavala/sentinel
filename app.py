@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from functools import wraps
+from collections import defaultdict
 import sqlite3
 import os
 import json
@@ -27,12 +28,11 @@ class DailyBookClosingTable(db.Model):
     average_sales_per_transaction = db.Column(db.Float, nullable=True)
     nets_qr_amount = db.Column(db.Float, nullable=True)
     cash_amount = db.Column(db.Float, nullable=True)
-    aha_credit_amount = db.Column(db.Float, nullable=True)
+    credit_amount = db.Column(db.Float, nullable=True)
     nets_amount = db.Column(db.Float, nullable=True)
     total_settlement = db.Column(db.Float, nullable=True)
     expected_cash_balance = db.Column(db.Float, nullable=True)
     cash_outs = db.Column(db.Text, nullable=True)
-    total_credit_given = db.Column(db.Float, nullable=True)
     voided_transactions = db.Column(db.Integer, nullable=True)
     voided_amount = db.Column(db.Float, nullable=True)
     processed_at = db.Column(db.String, nullable=True)
@@ -145,7 +145,7 @@ def get_record_by_id(table_name, record_id):
         columns = [description[0] for description in cursor.description]
         row = cursor.fetchone()
         conn.close()
-        
+
         if row:
             row_dict = {}
             for i, value in enumerate(row):
@@ -155,6 +155,180 @@ def get_record_by_id(table_name, record_id):
     except Exception as e:
         print(f"Error getting record by ID: {e}")
         return None
+
+def calculate_analytics():
+    """Calculate comprehensive analytics from all database tables"""
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        analytics = {
+            'summary': {},
+            'counts': {},
+            'daily_sales': [],
+            'monthly_revenue': [],
+            'payment_methods': {},
+            'top_suppliers': [],
+            'top_items': [],
+            'unpaid_invoices': [],
+            'payment_status': []
+        }
+
+        # Basic counts
+        cursor.execute("SELECT COUNT(*) FROM daily_book_closing_table")
+        analytics['counts']['daily_book_count'] = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM payments_table")
+        analytics['counts']['payments_count'] = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COUNT(*) FROM invoice_table")
+        analytics['counts']['invoice_count'] = cursor.fetchone()[0]
+
+        # Total revenue from daily book closing
+        cursor.execute("SELECT SUM(total_sales) FROM daily_book_closing_table WHERE total_sales IS NOT NULL")
+        result = cursor.fetchone()[0]
+        analytics['summary']['total_revenue'] = result if result else 0.0
+
+        # Outstanding payments (pending)
+        cursor.execute("SELECT SUM(total_amount) FROM payments_table WHERE payment_status = 'pending'")
+        result = cursor.fetchone()[0]
+        analytics['summary']['total_outstanding'] = result if result else 0.0
+
+        # Daily sales data (last 30 days)
+        thirty_days_ago = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        cursor.execute("""
+            SELECT closing_date, total_sales
+            FROM daily_book_closing_table
+            WHERE closing_date >= ? AND total_sales IS NOT NULL
+            ORDER BY closing_date DESC LIMIT 30
+        """, (thirty_days_ago,))
+
+        for row in cursor.fetchall():
+            analytics['daily_sales'].append({
+                'date': row[0],
+                'sales': row[1] if row[1] else 0
+            })
+
+        # Monthly revenue
+        cursor.execute("""
+            SELECT strftime('%Y', closing_date) as year,
+                   strftime('%m', closing_date) as month,
+                   SUM(total_sales) as revenue
+            FROM daily_book_closing_table
+            WHERE total_sales IS NOT NULL
+            GROUP BY year, month
+            ORDER BY year DESC, month DESC
+            LIMIT 12
+        """)
+
+        for row in cursor.fetchall():
+            analytics['monthly_revenue'].append({
+                'year': int(row[0]),
+                'month': int(row[1]),
+                'revenue': row[2] if row[2] else 0
+            })
+
+        # Payment methods distribution
+        cursor.execute("""
+            SELECT SUM(cash_amount), SUM(credit_amount), SUM(nets_amount), SUM(nets_qr_amount)
+            FROM daily_book_closing_table
+        """)
+
+        payment_totals = cursor.fetchone()
+        analytics['payment_methods'] = {
+            'cash': payment_totals[0] if payment_totals[0] else 0,
+            'credit': payment_totals[1] if payment_totals[1] else 0,
+            'nets': payment_totals[2] if payment_totals[2] else 0,
+            'nets_qr': payment_totals[3] if payment_totals[3] else 0
+        }
+
+        # Top suppliers by total amount (one entry per invoice)
+        cursor.execute("""
+            SELECT supplier_name,
+                   SUM(total_amount) as total,
+                   COUNT(DISTINCT invoice_number) as invoice_count
+            FROM (
+                SELECT DISTINCT invoice_number, supplier_name, total_amount
+                FROM invoice_table
+                WHERE supplier_name IS NOT NULL
+            ) unique_invoices
+            GROUP BY supplier_name
+            ORDER BY total DESC
+            LIMIT 10
+        """)
+
+        for row in cursor.fetchall():
+            analytics['top_suppliers'].append({
+                'name': row[0],
+                'amount': row[1] if row[1] else 0,
+                'count': row[2]
+            })
+
+        # Top items by quantity (sum actual quantities and their amounts)
+        cursor.execute("""
+            SELECT item_name,
+                   SUM(quantity) as total_qty,
+                   SUM(COALESCE(total_amount_per_item, amount_per_item, 0)) as total_value
+            FROM invoice_table
+            WHERE item_name IS NOT NULL
+            GROUP BY item_name
+            ORDER BY total_qty DESC
+            LIMIT 10
+        """)
+
+        for row in cursor.fetchall():
+            analytics['top_items'].append({
+                'name': row[0],
+                'quantity': row[1] if row[1] else 0,
+                'amount': row[2] if row[2] else 0
+            })
+
+        # Pending invoices (unpaid)
+        cursor.execute("""
+            SELECT invoice_number, total_amount, payment_due_date
+            FROM payments_table
+            WHERE payment_status = 'pending'
+            ORDER BY payment_due_date ASC
+            LIMIT 10
+        """)
+
+        for row in cursor.fetchall():
+            analytics['unpaid_invoices'].append({
+                'invoice_number': row[0],
+                'amount': row[1] if row[1] else 0,
+                'due_date': row[2] if row[2] else 'N/A'
+            })
+
+        # Payment status distribution
+        cursor.execute("""
+            SELECT payment_status, COUNT(*) as count, SUM(total_amount) as amount
+            FROM payments_table
+            GROUP BY payment_status
+        """)
+
+        for row in cursor.fetchall():
+            analytics['payment_status'].append({
+                'status': row[0] if row[0] else 'unknown',
+                'count': row[1],
+                'amount': row[2] if row[2] else 0
+            })
+
+        conn.close()
+        return analytics
+
+    except Exception as e:
+        print(f"Analytics calculation error: {e}")
+        return {
+            'summary': {'total_revenue': 0, 'total_outstanding': 0},
+            'counts': {'daily_book_count': 0, 'payments_count': 0, 'invoice_count': 0},
+            'daily_sales': [],
+            'monthly_revenue': [],
+            'payment_methods': {'cash': 0, 'credit': 0, 'nets': 0, 'nets_qr': 0},
+            'top_suppliers': [],
+            'top_items': [],
+            'unpaid_invoices': [],
+            'payment_status': []
+        }
 
 # Routes
 @app.route('/')
@@ -189,39 +363,26 @@ def logout():
 @login_required
 def dashboard():
     try:
-        daily_book_data = get_direct_data('daily_book_closing_table')
-        payments_data = get_direct_data('payments_table')
-        invoice_data = get_direct_data('invoice_table')
-        
-        daily_book_count = len(daily_book_data)
-        payments_count = len(payments_data)
-        invoice_count = len(invoice_data)
-        
-        latest_daily_book = daily_book_data[0] if daily_book_data else None
-        latest_payment = payments_data[0] if payments_data else None
-        latest_invoice = invoice_data[0] if invoice_data else None
-        
-        template_data = {
-            'daily_book_count': daily_book_count,
-            'payments_count': payments_count,
-            'invoice_count': invoice_count,
-            'latest_daily_book': latest_daily_book,
-            'latest_payment': latest_payment,
-            'latest_invoice': latest_invoice
-        }
-        
-        return render_template('dashboard.html', **template_data)
-        
+        analytics = calculate_analytics()
+        return render_template('dashboard.html', analytics=analytics)
+
     except Exception as e:
         print(f"Dashboard error: {str(e)}")
         flash(f'Error loading dashboard: {str(e)}', 'error')
-        return render_template('dashboard.html', 
-                             daily_book_count=0,
-                             payments_count=0,
-                             invoice_count=0,
-                             latest_daily_book=None,
-                             latest_payment=None,
-                             latest_invoice=None)
+
+        # Return empty analytics structure on error
+        empty_analytics = {
+            'summary': {'total_revenue': 0, 'total_outstanding': 0},
+            'counts': {'daily_book_count': 0, 'payments_count': 0, 'invoice_count': 0},
+            'daily_sales': [],
+            'monthly_revenue': [],
+            'payment_methods': {'cash': 0, 'credit': 0, 'nets': 0, 'nets_qr': 0},
+            'top_suppliers': [],
+            'top_items': [],
+            'unpaid_invoices': [],
+            'payment_status': []
+        }
+        return render_template('dashboard.html', analytics=empty_analytics)
 
 @app.route('/daily-book-closing')
 @login_required
@@ -252,9 +413,9 @@ def add_daily_book_closing():
             for key, value in data.items():
                 if value == '':
                     processed_data[key] = None
-                elif key in ['total_sales', 'average_sales_per_transaction', 'nets_qr_amount', 
-                           'cash_amount', 'aha_credit_amount', 'nets_amount', 'total_settlement', 
-                           'expected_cash_balance', 'total_credit_given', 'voided_amount']:
+                elif key in ['total_sales', 'average_sales_per_transaction', 'nets_qr_amount',
+                           'cash_amount', 'credit_amount', 'nets_amount', 'total_settlement',
+                           'expected_cash_balance', 'voided_amount']:
                     processed_data[key] = float(value) if value else None
                 elif key in ['number_of_transactions', 'voided_transactions']:
                     processed_data[key] = int(value) if value else None
@@ -297,9 +458,9 @@ def edit_daily_book_closing(record_id):
             for key, value in data.items():
                 if value == '':
                     processed_data[key] = None
-                elif key in ['total_sales', 'average_sales_per_transaction', 'nets_qr_amount', 
-                           'cash_amount', 'aha_credit_amount', 'nets_amount', 'total_settlement', 
-                           'expected_cash_balance', 'total_credit_given', 'voided_amount']:
+                elif key in ['total_sales', 'average_sales_per_transaction', 'nets_qr_amount',
+                           'cash_amount', 'credit_amount', 'nets_amount', 'total_settlement',
+                           'expected_cash_balance', 'voided_amount']:
                     processed_data[key] = float(value) if value else None
                 elif key in ['number_of_transactions', 'voided_transactions']:
                     processed_data[key] = int(value) if value else None
@@ -624,6 +785,16 @@ def search_invoices():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# Analytics API endpoint
+@app.route('/api/analytics')
+@login_required
+def api_analytics():
+    try:
+        analytics = calculate_analytics()
+        return jsonify(analytics)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Debug routes (existing)
 @app.route('/debug-db')
 @login_required
@@ -668,4 +839,4 @@ def debug_db():
 if __name__ == '__main__':
     print(f"Database path: {db_path}")
     print(f"Database exists: {os.path.exists(db_path)}")
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=True, host='0.0.0.0', port=5002)

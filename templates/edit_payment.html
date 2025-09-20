@@ -73,7 +73,7 @@
                                     <option value="">Select payment type</option>
                                     <option value="cash" {{ 'selected' if record.payment_type == 'cash' else '' }}>Cash</option>
                                     <option value="bank_transfer" {{ 'selected' if record.payment_type == 'bank_transfer' else '' }}>Bank Transfer</option>
-                                    <option value="cheque" {{ 'selected' if record.payment_type == 'cheque' else '' }}>Cheque</option>
+                                    <option value="PayNow" {{ 'selected' if record.payment_type == 'PayNow' else '' }}>PayNow</option>
                                     <option value="credit_card" {{ 'selected' if record.payment_type == 'credit_card' else '' }}>Credit Card</option>
                                     <option value="nets" {{ 'selected' if record.payment_type == 'nets' else '' }}>NETS</option>
                                 </select>
