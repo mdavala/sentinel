@@ -933,181 +933,71 @@ class StockSentinel:
             "success_rate": (processed_successfully/total_images)*100 if total_images > 0 else 0
         }
 
-    def process_local_images_only(self, model: str):
-        """
-        Process only existing local images without downloading from Google Drive
-        
-        Args:
-            model: Vision model to use for OCR
-        """
-        print("🚀 Stock Sentinel - Processing Local Images Only")
-        print("=" * 70)
-        print(f"📂 Local Folder: {self.local_folder}")
-        print(f"🤖 Vision Model: {model}")
-        print(f"🗄️ Database: dailydelights.db")
-        print("=" * 70)
-        
-        # Get all local images
-        local_images = self.get_local_images()
-        
-        if not local_images:
-            print("🔭 No images found in local folder")
-            return
-        
-        # Process statistics
-        total_images = len(local_images)
-        processed_successfully = 0
-        processed_with_errors = 0
-        
-        print(f"\n📄 Processing {total_images} local images through OCR...")
-        print("-" * 70)
-        
-        # Process each local image file (without file moving since we don't have Drive integration)
-        for i, file_path in enumerate(local_images, 1):
-            print(f"\n📊 OCR Progress: {i}/{total_images}")
-            
-            try:
-                filename = os.path.basename(file_path)
-                print(f"📂 Processing: {filename}")
-                
-                # Verify file exists
-                if not os.path.exists(file_path):
-                    print(f"⚠ File not found: {file_path}")
-                    processed_with_errors += 1
-                    continue
-                
-                # Run OCR on the local file
-                print(f"🔍 Running OCR on {filename}...")
-                parsed_json = ocr(file_path, model=model)
-                
-                # Save to database
-                print(f"💾 Checking for duplicates and saving to database...")
-                saved_count, supplier_name, invoice_date, is_duplicate = save_json_to_db(parsed_json, session)
-                
-                if is_duplicate:
-                    processed_successfully += 1
-                    print(f"🔄 Successfully processed {filename} as duplicate: skipped database update")
-                    if invoice_date:
-                        print(f"📅 Invoice date extracted: {invoice_date}")
-                elif saved_count > 0:
-                    processed_successfully += 1
-                    print(f"✅ Successfully processed {filename}: {saved_count} items saved")
-                    if invoice_date:
-                        print(f"📅 Invoice date extracted: {invoice_date}")
-                else:
-                    processed_with_errors += 1
-                    print(f"⚠️ No items saved for {filename}")
-                    
-            except Exception as e:
-                processed_with_errors += 1
-                print(f"⚠ Error processing {file_path}: {e}")
-            
-            # Brief pause between processing
-            if i < total_images:
-                print(f"⏳ Waiting 2 seconds before next image...")
-                time.sleep(2)
-        
-        # Final summary
-        print("\n" + "=" * 70)
-        print("📈 LOCAL PROCESSING SUMMARY")
-        print("=" * 70)
-        print(f"📂 Total Images Found: {total_images}")
-        print(f"✅ Successfully Processed: {processed_successfully}")
-        print(f"⚠ Failed to Process: {processed_with_errors}")
-        print(f"📊 Success Rate: {(processed_successfully/total_images)*100:.1f}%")
-        print(f"📂 Local Files Location: {os.path.abspath(self.local_folder)}")
-        print(f"🗄️ Database: dailydelights.db")
-        print("=" * 70)
-        
-        if processed_successfully > 0:
-            print("🎉 Local processing completed! Check dailydelights.db for extracted invoice data.")
-        else:
-            print("😞 No images were processed successfully. Check errors above.")
-            
-        return {
-            "total": total_images,
-            "success": processed_successfully,
-            "errors": processed_with_errors,
-            "success_rate": (processed_successfully/total_images)*100 if total_images > 0 else 0
-        }
 
+
+def cleanup_local_images(local_folder: str):
+    """
+    Delete all downloaded images from local folder after processing
+
+    Args:
+        local_folder: Path to the local folder containing downloaded images
+    """
+    if not os.path.exists(local_folder):
+        return
+
+    try:
+        image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'}
+        deleted_count = 0
+
+        for filename in os.listdir(local_folder):
+            if any(filename.lower().endswith(ext) for ext in image_extensions):
+                file_path = os.path.join(local_folder, filename)
+                try:
+                    os.remove(file_path)
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"⚠ Error deleting {filename}: {e}")
+
+        print(f"🧹 Cleanup completed: Deleted {deleted_count} local image files from {local_folder}")
+
+    except Exception as e:
+        print(f"⚠ Error during cleanup: {e}")
 
 def main():
-    """Main entry point"""
-    print("Stock Sentinel - Complete Invoice Processing System")
-    print("This will process invoice images using Vision OCR")
-    print()
-    
+    """Main entry point - Automatically process with default settings"""
+
     # Verify environment
     if not TOGETHER_API_KEY:
         print("⚠ TOGETHER_API_KEY not found in environment variables")
-        print("Please set your Together AI API key in .env file")
-        return
-    else:
-        print(f"✅ Together AI API Key found: {TOGETHER_API_KEY[:10]}...")
-    
-    # Choose processing option
-    print("\nProcessing Options:")
-    print("1. Custom model name (Download from Drive + Process + Move files)")
-    print("2. Process existing local images only (skip download)")
-    
-    try:
-        choice = input("Enter choice (1-2) or press Enter for option 1: ").strip()
-    except KeyboardInterrupt:
-        print("\nExiting...")
-        return
-    
-    if choice == "2":
-        # Process existing local images only
-        print("\n📄 Processing existing local images only (skipping download)")
-        
-        # Get model name
-        model = input("Enter model name (e.g., meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8): ").strip()
-        if not model:
-            print("⚠ Model name is required")
-            return
-        
-        sentinel = StockSentinel()
-        sentinel.process_local_images_only(model=model)
-        return
-    
-    else:
-        # Default: Custom model name with full processing
-        print("\n🤖 Custom model processing with Google Drive integration")
-        
-        # Get model name
-        model = input("Enter model name (e.g., meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8): ").strip()
-        if not model:
-            print("⚠ Model name is required")
-            return
-    
-    print(f"\n🤖 Selected model: {model}")
-    
-    # Confirm processing
-    print("\n⚠️ WARNING: This will download and process ALL images in your invoices folder.")
-    print("Each image will be downloaded to gdrive_invoices/ and sent to Together AI for OCR processing.")
-    print("Successfully processed images will be moved to 'processed_invoices' folder.")
-    print("Failed images will be moved to 'error_invoices' folder.")
-    
-    try:
-        confirm = input("Continue? (y/N): ").strip().lower()
-    except KeyboardInterrupt:
-        print("\nExiting...")
-        return
-    
-    if confirm != 'y':
-        print("Operation cancelled.")
-        return
-    
+        return {"success": False, "error": "API key not found"}
+
+    # Default model and settings
+    model = "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8"
+
+    print("🚀 Stock Sentinel - Automatic Invoice Processing")
+    print(f"🤖 Using model: {model}")
+
     # Start processing
     sentinel = StockSentinel()
-    
+
     try:
-        sentinel.process_all_images(model=model)
+        result = sentinel.process_all_images(model=model)
+
+        # Cleanup local images after processing
+        print(f"\n🧹 Cleaning up local images...")
+        cleanup_local_images(sentinel.local_folder)
+
+        return {
+            "success": True,
+            "total": result["total"],
+            "processed": result["success"],
+            "errors": result["errors"],
+            "success_rate": result["success_rate"]
+        }
+
     except Exception as e:
         print(f"⚠ Fatal error: {e}")
-        import traceback
-        print(f"📂 Full traceback: {traceback.format_exc()}")
+        return {"success": False, "error": str(e)}
 
 
 if __name__ == "__main__":

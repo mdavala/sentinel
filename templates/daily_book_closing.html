@@ -10,6 +10,9 @@
             <a href="{{ url_for('add_daily_book_closing') }}" class="btn btn-primary btn-sm">
                 <i class="fas fa-plus"></i> Add Record
             </a>
+            <button class="btn btn-success btn-sm" onclick="updateDailyBookClosing()" title="Process daily book closing images from Google Drive">
+                <i class="fas fa-sync-alt"></i> Update Daily Book Closing
+            </button>
             <div class="input-group" style="width: 300px;">
                 <input type="text" id="searchInput" class="form-control" placeholder="Search records...">
                 <button class="btn btn-outline-secondary" type="button" id="searchBtn">
@@ -29,9 +32,10 @@
                         <th>ID</th>
                         <th>Closing Date</th>
                         <th>Total Sales</th>
-                        <th>Transactions</th>
-                        <th>Avg per Transaction</th>
+                        <th>Nets Amount</th>
                         <th>Cash Amount</th>
+                        <th>Nets QR Amount</th>
+                        <th>Credit Amount</th>
                         <th>Processed At</th>
                         <th>Actions</th>
                     </tr>
@@ -99,22 +103,33 @@ $(document).ready(function() {
                 {"data": "id"},
                 {"data": "closing_date"},
                 {
-                    "data": "total_sales", 
-                    "render": function(data) { 
-                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; 
-                    }
-                },
-                {"data": "number_of_transactions"},
-                {
-                    "data": "average_sales_per_transaction", 
-                    "render": function(data) { 
-                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; 
+                    "data": "total_sales",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
                     }
                 },
                 {
-                    "data": "cash_amount", 
-                    "render": function(data) { 
-                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A'; 
+                    "data": "nets_amount",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
+                    }
+                },
+                {
+                    "data": "cash_amount",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
+                    }
+                },
+                {
+                    "data": "nets_qr_amount",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
+                    }
+                },
+                {
+                    "data": "credit_amount",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
                     }
                 },
                 {"data": "processed_at"},
@@ -234,6 +249,25 @@ function deleteRecord(recordId) {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/daily-book-closing/delete/${recordId}`;
+        form.style.display = 'none';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Global function for updating daily book closing from Google Drive
+function updateDailyBookClosing() {
+    if (confirm('This will process daily book closing images from Google Drive and may take several minutes. Continue?')) {
+        // Show loading indicator
+        const button = event.target.closest('button');
+        const originalHtml = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        button.disabled = true;
+
+        // Create and submit form
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/daily-book-closing/update';
         form.style.display = 'none';
         document.body.appendChild(form);
         form.submit();

@@ -141,33 +141,26 @@ class CompleteEmailProcessor:
     def parse_email_content(self, email_content: str) -> Optional[UOBPaymentData]:
         """Parse UOB email content to extract payment information"""
         try:
-            print(f"DEBUG: Parsing email content:\n{email_content[:500]}...")
-            
             # Extract transaction type
             transaction_match = re.search(r'Transaction:\s*(.+)', email_content)
             payment_type = transaction_match.group(1).strip() if transaction_match else ""
-            print(f"DEBUG: Found payment_type: '{payment_type}'")
-            
+
             # Extract FT Reference
             ft_ref_match = re.search(r'FT Reference:\s*(.+)', email_content)
             reference_num = ft_ref_match.group(1).strip() if ft_ref_match else ""
-            print(f"DEBUG: Found reference_num: '{reference_num}'")
-            
+
             # Extract Customer Reference (optional)
             cust_ref_match = re.search(r'Customer Reference:\s*(.+)', email_content)
             customer_reference = cust_ref_match.group(1).strip() if cust_ref_match and cust_ref_match.group(1).strip() else None
-            print(f"DEBUG: Found customer_reference: '{customer_reference}'")
-            
+
             # Extract Payer/Payee Name
             payee_match = re.search(r'Payer / Payee Name:\s*(.+)', email_content)
             supplier_name = payee_match.group(1).strip() if payee_match else ""
-            print(f"DEBUG: Found supplier_name: '{supplier_name}'")
-            
+
             # Extract Currency and Amount
             amount_match = re.search(r'Currency and Amount:\s*(.+)', email_content)
             currency_amount = amount_match.group(1).strip() if amount_match else ""
-            print(f"DEBUG: Found currency_amount: '{currency_amount}'")
-            
+
             # Parse currency and amount
             currency = "SGD"  # Default
             amount = 0.0
@@ -176,13 +169,10 @@ class CompleteEmailProcessor:
                 if currency_match:
                     currency = currency_match.group(1)
                     amount = float(currency_match.group(2).replace(',', ''))
-            
-            print(f"DEBUG: Parsed amount: {amount}, currency: {currency}")
-            
+
             if not all([payment_type, reference_num, supplier_name, amount]):
-                print(f"Missing required fields: payment_type={payment_type}, reference_num={reference_num}, supplier_name={supplier_name}, amount={amount}")
                 return None
-            
+
             return UOBPaymentData(
                 payment_type=payment_type,
                 reference_num=reference_num,
@@ -191,53 +181,72 @@ class CompleteEmailProcessor:
                 amount=amount,
                 currency=currency
             )
-            
+
         except Exception as e:
-            print(f"Error parsing email content: {e}")
             return None
     
     def find_matching_payment(self, payment_data: UOBPaymentData):
         """Find matching payment in database based on supplier name and amount tolerance"""
         if not self.db_path:
-            print("No database path provided")
             return []
-            
+
         session = self.SessionLocal()
         try:
-            # Search for payments with matching supplier name and amount within ±2 tolerance
+            # Search for payments with amount within ±2 tolerance
             min_amount = payment_data.amount - 2.0
             max_amount = payment_data.amount + 2.0
-            
-            print(f"DEBUG: Searching for supplier '{payment_data.supplier_name}' with amount between {min_amount} and {max_amount}")
-            
-            # Try exact supplier name match first
-            matching_payments = session.query(PaymentsTable).filter(
-                PaymentsTable.supplier_name.ilike(f"%{payment_data.supplier_name}%"),
+
+            # Get all payments within amount range
+            amount_candidates = session.query(PaymentsTable).filter(
                 PaymentsTable.total_amount >= min_amount,
                 PaymentsTable.total_amount <= max_amount
             ).all()
-            
-            print(f"DEBUG: Found {len(matching_payments)} exact matches")
-            
-            if not matching_payments:
-                # Try partial matching by removing common suffixes/prefixes
-                cleaned_supplier = re.sub(r'\s+(PTE\.?\s*LTD\.?|LTD\.?|PTE\.?)\s*$', '', payment_data.supplier_name, flags=re.IGNORECASE)
-                print(f"DEBUG: Trying cleaned supplier name: '{cleaned_supplier}'")
-                matching_payments = session.query(PaymentsTable).filter(
-                    PaymentsTable.supplier_name.ilike(f"%{cleaned_supplier}%"),
-                    PaymentsTable.total_amount >= min_amount,
-                    PaymentsTable.total_amount <= max_amount
-                ).all()
-                print(f"DEBUG: Found {len(matching_payments)} partial matches")
-            
-            # Debug: Show all suppliers in database for comparison
-            all_suppliers = session.query(PaymentsTable.supplier_name, PaymentsTable.total_amount).all()
-            print(f"DEBUG: All suppliers in database: {[(s.supplier_name, s.total_amount) for s in all_suppliers]}")
-            
+
+            if not amount_candidates:
+                return []
+
+            # Fuzzy match supplier names
+            matching_payments = []
+            email_supplier = payment_data.supplier_name.upper().strip()
+
+            for payment in amount_candidates:
+                if not payment.supplier_name:
+                    continue
+
+                db_supplier = payment.supplier_name.upper().strip()
+
+                # Strategy 1: Exact match
+                if email_supplier == db_supplier:
+                    matching_payments.append(payment)
+                    continue
+
+                # Strategy 2: One contains the other
+                if email_supplier in db_supplier or db_supplier in email_supplier:
+                    matching_payments.append(payment)
+                    continue
+
+                # Strategy 3: Remove common business suffixes and compare
+                email_clean = re.sub(r'\s+(PTE\.?\s*LTD\.?|LIMITED|LTD\.?|PTE\.?|PRIVATE)\s*$', '', email_supplier)
+                db_clean = re.sub(r'\s+(PTE\.?\s*LTD\.?|LIMITED|LTD\.?|PTE\.?|PRIVATE)\s*$', '', db_supplier)
+
+                if email_clean == db_clean or email_clean in db_clean or db_clean in email_clean:
+                    matching_payments.append(payment)
+                    continue
+
+                # Strategy 4: Word-by-word matching (at least 70% words match)
+                email_words = set(email_clean.split())
+                db_words = set(db_clean.split())
+
+                if email_words and db_words:
+                    common_words = email_words.intersection(db_words)
+                    match_ratio = len(common_words) / max(len(email_words), len(db_words))
+
+                    if match_ratio >= 0.7:
+                        matching_payments.append(payment)
+
             return matching_payments
-            
+
         except Exception as e:
-            print(f"Error searching for matching payments: {e}")
             return []
         finally:
             session.close()
@@ -245,82 +254,69 @@ class CompleteEmailProcessor:
     def process_payment(self, payment_data: UOBPaymentData):
         """Process the payment and update database accordingly"""
         if not self.db_path:
-            print("No database path provided - cannot process payments")
             return False
-            
-        # Use direct SQLite connection instead of SQLAlchemy ORM for updates
+
+        # Use direct SQLite connection for updates
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         try:
-            # Find matching payments using SQLAlchemy (for search logic)
+            # Find matching payments
             session = self.SessionLocal()
             matching_payments = self.find_matching_payment(payment_data)
             session.close()
-            
+
             if not matching_payments:
-                print(f"No matching payment found for supplier: {payment_data.supplier_name}, amount: {payment_data.amount}")
                 return False
-            
-            # Process each matching payment using direct SQL
+
+            processed_count = 0
+
+            # Process each matching payment
             for payment in matching_payments:
-                print(f"Processing payment ID: {payment.id}, Supplier: {payment.supplier_name}, Amount: {payment.total_amount}, Status: {payment.payment_status}")
-                
                 # Check if reference number already exists (duplicate check)
                 cursor.execute(
                     "SELECT id FROM payments_table WHERE reference_num = ? AND id != ?",
                     (payment_data.reference_num, payment.id)
                 )
                 existing_payment = cursor.fetchone()
-                
+
                 if existing_payment:
                     # Duplicate reference number found
                     cursor.execute("""
-                        UPDATE payments_table 
+                        UPDATE payments_table
                         SET payment_validity = ?, payment_type = ?, reference_num = ?
                         WHERE id = ?
                     """, ("duplicate", payment_data.payment_type, payment_data.reference_num, payment.id))
-                    print(f"Duplicate payment detected for reference: {payment_data.reference_num}")
-                    
+
                 elif payment.payment_status and payment.payment_status.lower() == "pending":
                     # Valid payment - update to paid
                     cursor.execute("""
-                        UPDATE payments_table 
+                        UPDATE payments_table
                         SET payment_status = ?, payment_type = ?, reference_num = ?, payment_validity = ?
                         WHERE id = ?
                     """, ("paid", payment_data.payment_type, payment_data.reference_num, "valid", payment.id))
-                    print(f"Payment marked as paid for supplier: {payment.supplier_name}")
-                    
+                    processed_count += 1
+
                 elif payment.payment_status and payment.payment_status.lower() == "paid":
                     # Already paid - mark as duplicate
                     cursor.execute("""
-                        UPDATE payments_table 
+                        UPDATE payments_table
                         SET payment_validity = ?, payment_type = ?, reference_num = ?
                         WHERE id = ?
                     """, ("duplicate", payment_data.payment_type, payment_data.reference_num, payment.id))
-                    print(f"Payment already paid - marked as duplicate for supplier: {payment.supplier_name}")
-                    
+
                 else:
-                    # Unknown status - mark as valid but keep original status
+                    # Unknown status - update payment info
                     cursor.execute("""
-                        UPDATE payments_table 
+                        UPDATE payments_table
                         SET payment_type = ?, reference_num = ?, payment_validity = ?
                         WHERE id = ?
                     """, (payment_data.payment_type, payment_data.reference_num, "valid", payment.id))
-                    print(f"Payment processed with unknown status: {payment.payment_status}")
-            
+
             conn.commit()
-            
-            # Verify the updates worked
-            for payment in matching_payments:
-                cursor.execute("SELECT payment_status, payment_type, reference_num, payment_validity FROM payments_table WHERE id = ?", (payment.id,))
-                updated_row = cursor.fetchone()
-                print(f"Verified update for ID {payment.id}: Status={updated_row[0]}, Type={updated_row[1]}, Ref={updated_row[2]}, Validity={updated_row[3]}")
-            
-            return True
-            
+            return processed_count > 0
+
         except Exception as e:
-            print(f"Error processing payment: {e}")
             conn.rollback()
             return False
         finally:
@@ -330,82 +326,54 @@ class CompleteEmailProcessor:
         """Fetch UOB emails from last 24 hours and process payments"""
         yesterday = (datetime.now() - timedelta(hours=24)).strftime("%Y/%m/%d")
         query = f'from:uobgroup.com after:{yesterday}'
-        
+
         try:
             result = self.service.users().messages().list(
                 userId='me', q=query, maxResults=50).execute()
-            
+
             messages = result.get('messages', [])
-            print(f"\n=== Found {len(messages)} UOB emails from last 24 hours ===\n")
-            
+
             if not messages:
-                print("No UOB emails found in the last 24 hours.")
+                print("🎯 Summary: 0 emails found in last 24 hours, none to process")
                 return
-            
+
             processed_payments = 0
-            
-            for i, message in enumerate(messages, 1):
+            payment_emails = 0
+
+            for message in messages:
                 try:
                     msg = self.service.users().messages().get(
                         userId='me', id=message['id'], format='full').execute()
-                    
+
                     headers = msg['payload']['headers']
-                    subject = self.get_header_value(headers, 'Subject')
-                    sender = self.get_header_value(headers, 'From')
-                    date = self.get_header_value(headers, 'Date')
                     content = self.extract_email_content(msg['payload'])
-                    
-                    print(f"UOB EMAIL {i}")
-                    print(f"From: {sender}")
-                    print(f"Subject: {subject}")
-                    print(f"Date: {date}")
-                    print("-" * 60)
-                    
-                    # FIXED: Check for multiple possible text patterns
+
+                    # Check for payment indicators
                     payment_indicators = [
                         "transaction has been submitted for processing",
                         "has been released to the bank for processing",
                         "transaction has been released",
                         "FT Reference:"
                     ]
-                    
+
                     is_payment_email = any(indicator in content.lower() for indicator in payment_indicators)
-                    
+
                     if is_payment_email:
-                        print("🔄 Processing payment notification...")
-                        
-                        # Parse and process the payment
+                        payment_emails += 1
                         payment_data = self.parse_email_content(content)
-                        
+
                         if payment_data:
-                            print(f"Parsed payment: {payment_data.supplier_name} - ${payment_data.amount}")
                             success = self.process_payment(payment_data)
                             if success:
                                 processed_payments += 1
-                                print("✅ Payment processed successfully!")
-                            else:
-                                print("❌ Failed to process payment")
-                        else:
-                            print("❌ Failed to parse payment data")
-                    else:
-                        print("📧 Regular email (not a payment notification)")
-                        print(f"Content preview: {content[:100]}...")
-                    
-                    print("=" * 80)
-                    print()
-                    
+
                 except Exception as e:
-                    print(f"Error processing UOB email {i}: {e}")
                     continue
-            
-            print(f"\n🎯 Summary: Processed {processed_payments} payment notifications out of {len(messages)} emails")
-            
-            # Show payment summary
-            if processed_payments > 0:
-                self.get_payment_summary()
-                    
+
+            print(f"🎯 Summary: Found {payment_emails} payment emails in last 24 hours, successfully processed {processed_payments}")
+
         except Exception as e:
-            print(f"Error fetching UOB emails: {e}")
+            print(f"🎯 Summary: 0 emails processed due to error: {e}")
     
     def get_header_value(self, headers, name):
         """Get header value by name"""
@@ -436,48 +404,22 @@ class CompleteEmailProcessor:
         
         return content
     
-    def get_payment_summary(self):
-        """Get summary of recent payments"""
-        if not self.db_path:
-            print("No database path provided")
-            return
-            
-        session = self.SessionLocal()
-        try:
-            payments = session.query(PaymentsTable).filter(
-                PaymentsTable.reference_num.isnot(None)
-            ).order_by(PaymentsTable.id.desc()).limit(10).all()
-            
-            print("\n=== RECENT PROCESSED PAYMENTS ===")
-            for payment in payments:
-                print(f"ID: {payment.id}, Supplier: {payment.supplier_name}, "
-                      f"Amount: ${payment.total_amount:.2f}, Status: {payment.payment_status}, "
-                      f"Validity: {payment.payment_validity}, Ref: {payment.reference_num}")
-            
-        except Exception as e:
-            print(f"Error getting payment summary: {e}")
-        finally:
-            session.close()
 
 def main():
     """Main function to fetch and process UOB emails"""
-    
-    # Database path - UPDATE THIS TO YOUR ACTUAL PATH
-    db_path = "/Users/mdavala/Desktop/MacbookPro2023Backup/Personal/Projects/Artificial_Intelligence/Pallava/AgenticAI Operations/DailyDelights/InventoryManagement/dailydelights.db"
-    
+
+    # Database path
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dailydelights.db')
+
     # Initialize the email processor
     processor = CompleteEmailProcessor(
         credentials_file="credentials_sg_daily_delights_email.json",
         token_file="token_sg_daily_delights_email.json",
         db_path=db_path
     )
-    
-    print("🚀 Starting UOB email processing...")
-    
+
     # Fetch and process UOB emails with payment processing
     processor.fetch_and_process_uob_emails_24h()
-    
-    print("✅ UOB email processing completed!")
 
 if __name__ == "__main__":
     main()

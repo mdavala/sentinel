@@ -807,59 +807,69 @@ class DailyBookClosingSentinel:
             "success_rate": (processed_successfully/total_groups)*100 if total_groups > 0 else 0
         }
 
+def cleanup_local_images(local_folder: str):
+    """
+    Delete all downloaded images from local folder after processing
+
+    Args:
+        local_folder: Path to the local folder containing downloaded images
+    """
+    if not os.path.exists(local_folder):
+        return
+
+    try:
+        image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'}
+        deleted_count = 0
+
+        for filename in os.listdir(local_folder):
+            if any(filename.lower().endswith(ext) for ext in image_extensions):
+                file_path = os.path.join(local_folder, filename)
+                try:
+                    os.remove(file_path)
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"Error deleting {filename}: {e}")
+
+        print(f"Cleanup completed: Deleted {deleted_count} local image files from {local_folder}")
+
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+
 def main():
-    """Main entry point"""
-    print("Daily Book Closing Sentinel - Processing System")
-    print("This will process daily book closing images using Vision OCR")
-    print("Images will be grouped by date and merged into single records")
-    print()
-    
+    """Main entry point - Automatically process with default settings"""
+
     # Verify environment
     if not TOGETHER_API_KEY:
         print("TOGETHER_API_KEY not found in environment variables")
-        print("Please set your Together AI API key in .env file")
-        return
-    else:
-        print(f"Together AI API Key found: {TOGETHER_API_KEY[:10]}...")
-    
-    # Get model name
-    model = input("Enter model name (e.g., meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8): ").strip()
-    if not model:
-        print("Model name is required")
-        return
-    
-    print(f"\nSelected model: {model}")
-    
-    # Update folder ID reminder
-    print("\nIMPORTANT: Please update DAILY_BOOK_CLOSING_FOLDER_ID in the script")
-    print("with your actual 'daily_book_closing' folder ID from Google Drive")
-    
-    # Confirm processing
-    print("\nWARNING: This will download and process ALL images in your daily_book_closing folder.")
-    print("Images will be grouped by date and processed together.")
-    print("Each date group will be merged into a single database record.")
-    print("Successfully processed images will be moved to 'processed_daily_book_closing' folder.")
-    print("Files will be renamed as: <date>_dbc_<number>.jpg")
-    
-    try:
-        confirm = input("Continue? (y/N): ").strip().lower()
-    except KeyboardInterrupt:
-        print("\nExiting...")
-        return
-    
-    if confirm != 'y':
-        print("Operation cancelled.")
-        return
-    
+        return {"success": False, "error": "API key not found"}
+
+    # Default model and settings
+    model = "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8"
+
+    print("🚀 Daily Book Closing Sentinel - Automatic Processing")
+    print(f"🤖 Using model: {model}")
+
     # Start processing
     sentinel = DailyBookClosingSentinel()
-    
+
     try:
-        sentinel.process_all_images(model=model)
+        result = sentinel.process_all_images(model=model)
+
+        # Cleanup local images after processing
+        print(f"\n🧹 Cleaning up local images...")
+        cleanup_local_images(sentinel.local_folder)
+
+        return {
+            "success": True,
+            "total_groups": result["total_groups"],
+            "processed": result["success"],
+            "errors": result["errors"],
+            "success_rate": result["success_rate"]
+        }
+
     except Exception as e:
         print(f"Fatal error: {e}")
-        import traceback
-        print(f"Full traceback: {traceback.format_exc()}")
+        return {"success": False, "error": str(e)}
 
 
 if __name__ == "__main__":

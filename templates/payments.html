@@ -10,6 +10,9 @@
             <a href="{{ url_for('add_payment') }}" class="btn btn-success btn-sm">
                 <i class="fas fa-plus"></i> Add Payment
             </a>
+            <button class="btn btn-info btn-sm" onclick="updatePayments()" title="Update payment statuses from UOB emails">
+                <i class="fas fa-sync-alt"></i> Update Payments
+            </button>
             <div class="input-group" style="width: 300px;">
                 <input type="text" id="searchInput" class="form-control" placeholder="Search payments...">
                 <button class="btn btn-outline-secondary" type="button" id="searchBtn">
@@ -232,6 +235,25 @@ function deleteRecord(recordId) {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/payments/delete/${recordId}`;
+        form.style.display = 'none';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Global function for updating payments from UOB emails
+function updatePayments() {
+    if (confirm('This will process UOB payment emails from the last 24 hours and update payment statuses. Continue?')) {
+        // Show loading indicator
+        const button = event.target.closest('button');
+        const originalHtml = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+        button.disabled = true;
+
+        // Create and submit form
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/payments/update';
         form.style.display = 'none';
         document.body.appendChild(form);
         form.submit();

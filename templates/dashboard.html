@@ -183,6 +183,7 @@
                         <thead>
                             <tr>
                                 <th>Invoice</th>
+                                <th>Supplier</th>
                                 <th>Amount</th>
                                 <th>Due Date</th>
                             </tr>
@@ -191,6 +192,7 @@
                             {% for invoice in analytics.unpaid_invoices %}
                             <tr>
                                 <td>{{ invoice.invoice_number }}</td>
+                                <td>{{ invoice.supplier_name[:15] }}{% if invoice.supplier_name|length > 15 %}...{% endif %}</td>
                                 <td>${{ "%.2f"|format(invoice.amount) }}</td>
                                 <td>
                                     {% if invoice.due_date != 'N/A' %}

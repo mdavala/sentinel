@@ -10,6 +10,9 @@
             <a href="{{ url_for('add_invoice') }}" class="btn btn-info btn-sm">
                 <i class="fas fa-plus"></i> Add Invoice
             </a>
+            <button class="btn btn-success btn-sm" onclick="updateInvoices()" title="Process invoice images from Google Drive">
+                <i class="fas fa-sync-alt"></i> Update Invoices
+            </button>
             <div class="input-group" style="width: 300px;">
                 <input type="text" id="searchInput" class="form-control" placeholder="Search invoices...">
                 <button class="btn btn-outline-secondary" type="button" id="searchBtn">
@@ -230,6 +233,25 @@ function deleteRecord(recordId) {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/invoices/delete/${recordId}`;
+        form.style.display = 'none';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Global function for updating invoices from Google Drive
+function updateInvoices() {
+    if (confirm('This will process invoice images from Google Drive and may take several minutes. Continue?')) {
+        // Show loading indicator
+        const button = event.target.closest('button');
+        const originalHtml = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        button.disabled = true;
+
+        // Create and submit form
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/invoices/update';
         form.style.display = 'none';
         document.body.appendChild(form);
         form.submit();

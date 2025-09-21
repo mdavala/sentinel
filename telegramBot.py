@@ -3,6 +3,7 @@ from telegram.ext import Application, MessageHandler, CommandHandler, filters, C
 import os
 import tempfile
 import logging
+import asyncio
 from datetime import datetime
 
 # Google Drive imports (OAuth2 - same as stockSentinel.py)
@@ -44,6 +45,7 @@ TOKEN_FILE = 'token.json'
 # Global variable to store user states and upload counters
 user_states = {}
 upload_counters = {}  # Added missing upload_counters dictionary
+upload_locks = {}  # To prevent concurrent upload issues per user
 
 def generate_random_filename(mode, counter):
     """Generate a filename with timestamp and counter"""
@@ -56,6 +58,8 @@ def generate_random_filename(mode, counter):
 class DriveUploader:
     def __init__(self):
         self.service = None
+        self.authenticated = False
+        self._auth_lock = asyncio.Lock()
         
     def authenticate(self):
         """Authenticate with Google Drive API using OAuth2 (same as stockSentinel.py)"""
@@ -87,37 +91,49 @@ class DriveUploader:
                 token.write(creds.to_json())
         
         self.service = build('drive', 'v3', credentials=creds)
+        self.authenticated = True
         logger.info("Google Drive authentication successful")
         return True
     
-    def upload_file(self, file_path, folder_id, file_name=None):
-        """Upload file to Google Drive"""
-        if not self.service:
-            if not self.authenticate():
-                return None
+    async def upload_file(self, file_path, folder_id, file_name=None, max_retries=3):
+        """Upload file to Google Drive with retry mechanism"""
+        # Ensure authentication is complete before upload
+        async with self._auth_lock:
+            if not self.service or not self.authenticated:
+                if not self.authenticate():
+                    return None
         
-        try:
-            if not file_name:
-                file_name = os.path.basename(file_path)
-            
-            file_metadata = {
-                'name': file_name,
-                'parents': [folder_id]
-            }
-            
-            media = MediaFileUpload(file_path, resumable=True)
-            
-            file = self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id,name,webViewLink'
-            ).execute()
-            
-            logger.info(f"File uploaded successfully: {file.get('name')}")
-            return file
-        except Exception as e:
-            logger.error(f"Upload failed: {e}")
-            return None
+        # Retry mechanism for upload
+        for attempt in range(max_retries):
+            try:
+                if not file_name:
+                    file_name = os.path.basename(file_path)
+
+                file_metadata = {
+                    'name': file_name,
+                    'parents': [folder_id]
+                }
+
+                media = MediaFileUpload(file_path, resumable=True)
+
+                file = self.service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id,name,webViewLink'
+                ).execute()
+
+                logger.info(f"File uploaded successfully: {file.get('name')}")
+                return file
+
+            except Exception as e:
+                logger.error(f"Upload failed (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    # Wait before retry (exponential backoff)
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                else:
+                    logger.error(f"Upload failed after {max_retries} attempts: {e}")
+                    return None
 
 # Initialize Drive uploader
 drive_uploader = DriveUploader()
@@ -182,19 +198,25 @@ async def upload_dailybookclosing_command(update: Update, context: ContextTypes.
     )
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle photo uploads"""
+    """Handle photo uploads with concurrency control"""
     user_id = update.effective_user.id
-    
+
     # Check if user is in upload mode
     if user_id not in user_states:
         await update.message.reply_text(
             "❌ Please use /upload_invoices or /upload_dailybookclosing first to activate upload mode!"
         )
         return
-    
-    user_state = user_states[user_id]
-    mode = user_state['mode']
-    folder_id = user_state['folder_id']
+
+    # Initialize upload lock for this user if not exists
+    if user_id not in upload_locks:
+        upload_locks[user_id] = asyncio.Lock()
+
+    # Use lock to prevent concurrent uploads for same user
+    async with upload_locks[user_id]:
+        user_state = user_states[user_id]
+        mode = user_state['mode']
+        folder_id = user_state['folder_id']
     
     if update.message and update.message.photo:
         processing_msg = None
@@ -229,9 +251,9 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:  # upload_dailybookclosing
                 folder_name = "Daily Book Closing"
             
-            # Upload to Google Drive
+            # Upload to Google Drive with async retry mechanism
             logger.info(f"Starting upload to Google Drive...")
-            uploaded_file = drive_uploader.upload_file(temp_file_path, folder_id, filename)
+            uploaded_file = await drive_uploader.upload_file(temp_file_path, folder_id, filename)
             
             if uploaded_file:
                 logger.info(f"Upload successful: {uploaded_file.get('name')}")
@@ -333,7 +355,8 @@ def main():
         
         logger.info("🤖 Bot is starting...")
         
-        # Test Google Drive authentication
+        # Pre-authenticate Google Drive to avoid first-upload failures
+        logger.info("🔐 Pre-authenticating Google Drive...")
         if drive_uploader.authenticate():
             logger.info("✅ Google Drive authentication successful")
         else:

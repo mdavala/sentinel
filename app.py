@@ -87,6 +87,22 @@ class InvoiceTable(db.Model):
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
+class InventoryTable(db.Model):
+    __tablename__ = "inventory_table"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    item_name = db.Column(db.String, nullable=False, unique=True)
+    category = db.Column(db.String)
+    total_quantity = db.Column(db.Integer, default=0)
+    unit_price = db.Column(db.Float, default=0.0)
+    calculated_price = db.Column(db.Float, default=0.0)
+    barcode = db.Column(db.String)
+    last_updated = db.Column(db.Date, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
 # Authentication decorator
 def login_required(f):
     @wraps(f)
@@ -285,7 +301,7 @@ def calculate_analytics():
 
         # Pending invoices (unpaid)
         cursor.execute("""
-            SELECT invoice_number, total_amount, payment_due_date
+            SELECT invoice_number, supplier_name, total_amount, payment_due_date
             FROM payments_table
             WHERE payment_status = 'pending'
             ORDER BY payment_due_date ASC
@@ -295,8 +311,9 @@ def calculate_analytics():
         for row in cursor.fetchall():
             analytics['unpaid_invoices'].append({
                 'invoice_number': row[0],
-                'amount': row[1] if row[1] else 0,
-                'due_date': row[2] if row[2] else 'N/A'
+                'supplier_name': row[1] if row[1] else 'Unknown',
+                'amount': row[2] if row[2] else 0,
+                'due_date': row[3] if row[3] else 'N/A'
             })
 
         # Payment status distribution
@@ -399,6 +416,103 @@ def payments():
 def invoices():
     return render_template('invoices.html')
 
+@app.route('/inventory')
+@login_required
+def inventory():
+    return render_template('inventory.html')
+
+@app.route('/order-recommendations')
+@login_required
+def order_recommendations():
+    return render_template('order_recommendations.html')
+
+# Order Recommendations API Routes
+@app.route('/api/order-recommendations')
+@login_required
+def api_order_recommendations():
+    try:
+        # Import here to avoid startup issues
+        import sys
+        import importlib
+
+        # Add path if not already there
+        order_rec_path = os.path.join(os.path.dirname(__file__), 'orderRecommendations')
+        if order_rec_path not in sys.path:
+            sys.path.append(order_rec_path)
+
+        # Import with error handling
+        try:
+            from orderRecommendations.recommendation_engine import OrderRecommendationEngine
+        except ImportError:
+            # Fallback import
+            import recommendation_engine
+            OrderRecommendationEngine = recommendation_engine.OrderRecommendationEngine
+
+        print(f"Initializing OrderRecommendationEngine...")
+        engine = OrderRecommendationEngine()
+
+        # Get date parameter or use today
+        date_str = request.args.get('date')
+        if date_str:
+            target_date = datetime.strptime(date_str, '%Y-%m-%d')
+        else:
+            target_date = datetime.now()
+
+        print(f"Generating recommendations for {target_date.strftime('%Y-%m-%d')}...")
+        recommendations = engine.generate_daily_recommendations(target_date)
+
+        print(f"Generated {len(recommendations)} supplier recommendations")
+
+        # Convert to JSON-serializable format
+        import json
+        response_data = {
+            'success': True,
+            'date': target_date.strftime('%Y-%m-%d'),
+            'data': recommendations
+        }
+
+        # Use Flask's JSON encoder with default fallback
+        from flask import current_app
+        return current_app.response_class(
+            json.dumps(response_data, default=str),
+            mimetype='application/json'
+        )
+
+    except Exception as e:
+        print(f"Error in order recommendations API: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/order-recommendations/schedule')
+@login_required
+def api_order_recommendations_schedule():
+    try:
+        # Import here to avoid startup issues
+        import sys
+        sys.path.append(os.path.join(os.path.dirname(__file__), 'orderRecommendations'))
+        from recommendation_engine import OrderRecommendationEngine
+
+        engine = OrderRecommendationEngine()
+
+        # Get start date parameter or use today
+        start_date_str = request.args.get('start_date')
+        if start_date_str:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+        else:
+            start_date = datetime.now()
+
+        schedule = engine.generate_14_day_schedule(start_date)
+
+        return jsonify({
+            'success': True,
+            'start_date': start_date.strftime('%Y-%m-%d'),
+            'data': schedule
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # CRUD Routes for Daily Book Closing
 @app.route('/daily-book-closing/add', methods=['GET', 'POST'])
 @login_required
@@ -497,6 +611,64 @@ def delete_daily_book_closing(record_id):
     
     return redirect(url_for('daily_book_closing'))
 
+@app.route('/daily-book-closing/update', methods=['POST'])
+@login_required
+def update_daily_book_closing():
+    """Process daily book closing images from Google Drive using dailyBookClosing.py"""
+    try:
+        import subprocess
+        import os
+
+        # Run the dailyBookClosing processing script
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dailyBookClosing.py')
+        result = subprocess.run(['python3', script_path],
+                              capture_output=True, text=True, timeout=600)  # 10 minutes timeout
+
+        if result.returncode == 0:
+            # Parse output for summary information
+            output_lines = result.stdout.strip().split('\n')
+
+            # Look for processing summary
+            summary_found = False
+            for line in output_lines:
+                if 'Successfully Processed:' in line and 'Total Date Groups Found:' in line:
+                    summary_found = True
+                    break
+
+            if summary_found:
+                # Extract key metrics from the output
+                total_groups = 0
+                success_count = 0
+
+                for line in output_lines:
+                    if 'Successfully Processed:' in line:
+                        try:
+                            success_count = int(line.split(':')[1].strip())
+                        except:
+                            pass
+                    elif 'Total Date Groups Found:' in line:
+                        try:
+                            total_groups = int(line.split(':')[1].strip())
+                        except:
+                            pass
+
+                if total_groups > 0:
+                    flash(f'Daily book closing update completed! Processed {success_count} out of {total_groups} date groups successfully.', 'success')
+                else:
+                    flash('Daily book closing update completed! No new images found to process.', 'info')
+            else:
+                flash('Daily book closing update completed successfully!', 'success')
+        else:
+            error_msg = result.stderr if result.stderr else "Unknown error occurred"
+            flash(f'Daily book closing update failed: {error_msg}', 'error')
+
+    except subprocess.TimeoutExpired:
+        flash('Daily book closing update timed out. The process may still be running in the background.', 'warning')
+    except Exception as e:
+        flash(f'Error updating daily book closing: {str(e)}', 'error')
+
+    return redirect(url_for('daily_book_closing'))
+
 # CRUD Routes for Payments
 @app.route('/payments/add', methods=['GET', 'POST'])
 @login_required
@@ -577,6 +749,39 @@ def delete_payment(record_id):
     except Exception as e:
         flash(f'Error deleting payment: {str(e)}', 'error')
     
+    return redirect(url_for('payments'))
+
+@app.route('/payments/update', methods=['POST'])
+@login_required
+def update_payments():
+    """Process UOB payment emails and update payment statuses"""
+    try:
+        import subprocess
+        import os
+
+        # Run the UOB payment processing script
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uob_payment_emails.py')
+        result = subprocess.run(['python3', script_path],
+                              capture_output=True, text=True, timeout=120)
+
+        if result.returncode == 0:
+            # Extract summary from output
+            output_lines = result.stdout.strip().split('\n')
+            summary_line = [line for line in output_lines if '🎯 Summary:' in line]
+
+            if summary_line:
+                summary = summary_line[-1].replace('🎯 Summary: ', '')
+                flash(f'Payment update completed! {summary}', 'success')
+            else:
+                flash('Payment update completed successfully!', 'success')
+        else:
+            flash(f'Payment update failed: {result.stderr}', 'error')
+
+    except subprocess.TimeoutExpired:
+        flash('Payment update timed out. Please try again.', 'error')
+    except Exception as e:
+        flash(f'Error updating payments: {str(e)}', 'error')
+
     return redirect(url_for('payments'))
 
 # CRUD Routes for Invoices
@@ -667,6 +872,157 @@ def delete_invoice(record_id):
     
     return redirect(url_for('invoices'))
 
+@app.route('/invoices/update', methods=['POST'])
+@login_required
+def update_invoices():
+    """Process invoice images from Google Drive using stockSentinel.py"""
+    try:
+        import subprocess
+        import os
+
+        # Run the stockSentinel processing script
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stockSentinel.py')
+        result = subprocess.run(['python3', script_path],
+                              capture_output=True, text=True, timeout=600)  # 10 minutes timeout
+
+        if result.returncode == 0:
+            # Parse output for summary information
+            output_lines = result.stdout.strip().split('\n')
+
+            # Look for processing summary
+            summary_found = False
+            for line in output_lines:
+                if 'Successfully Processed:' in line and 'Total Images Found:' in line:
+                    # Extract numbers from summary
+                    summary_found = True
+                    break
+
+            if summary_found:
+                # Extract key metrics from the output
+                total_processed = 0
+                success_count = 0
+
+                for line in output_lines:
+                    if '✅ Successfully Processed:' in line:
+                        try:
+                            success_count = int(line.split(':')[1].strip())
+                        except:
+                            pass
+                    elif '📂 Total Images Found:' in line:
+                        try:
+                            total_processed = int(line.split(':')[1].strip())
+                        except:
+                            pass
+
+                if total_processed > 0:
+                    flash(f'Invoice update completed! Processed {success_count} out of {total_processed} invoices successfully.', 'success')
+                else:
+                    flash('Invoice update completed! No new invoices found to process.', 'info')
+            else:
+                flash('Invoice update completed successfully!', 'success')
+        else:
+            error_msg = result.stderr if result.stderr else "Unknown error occurred"
+            flash(f'Invoice update failed: {error_msg}', 'error')
+
+    except subprocess.TimeoutExpired:
+        flash('Invoice update timed out. The process may still be running in the background.', 'warning')
+    except Exception as e:
+        flash(f'Error updating invoices: {str(e)}', 'error')
+
+    return redirect(url_for('invoices'))
+
+# CRUD Routes for Inventory
+@app.route('/inventory/add', methods=['GET', 'POST'])
+@login_required
+def add_inventory():
+    if request.method == 'POST':
+        try:
+            data = request.form.to_dict()
+
+            processed_data = {}
+            for key, value in data.items():
+                if value == '':
+                    processed_data[key] = None
+                elif key in ['total_quantity']:
+                    processed_data[key] = int(value) if value else 0
+                elif key in ['unit_price', 'calculated_price']:
+                    processed_data[key] = float(value) if value else 0.0
+                else:
+                    processed_data[key] = value
+
+            # Add current date for last_updated
+            processed_data['last_updated'] = datetime.now().strftime('%Y-%m-%d')
+
+            columns = list(processed_data.keys())
+            placeholders = ', '.join(['?' for _ in columns])
+            query = f"INSERT INTO inventory_table ({', '.join(columns)}) VALUES ({placeholders})"
+
+            if execute_direct_query(query, list(processed_data.values())):
+                flash('Inventory item added successfully!', 'success')
+                return redirect(url_for('inventory'))
+            else:
+                flash('Error adding inventory item', 'error')
+
+        except Exception as e:
+            flash(f'Error adding inventory item: {str(e)}', 'error')
+
+    return render_template('add_inventory.html')
+
+@app.route('/inventory/edit/<int:record_id>', methods=['GET', 'POST'])
+@login_required
+def edit_inventory(record_id):
+    record = get_record_by_id('inventory_table', record_id)
+    if not record:
+        flash('Inventory item not found', 'error')
+        return redirect(url_for('inventory'))
+
+    if request.method == 'POST':
+        try:
+            data = request.form.to_dict()
+
+            processed_data = {}
+            for key, value in data.items():
+                if value == '':
+                    processed_data[key] = None
+                elif key in ['total_quantity']:
+                    processed_data[key] = int(value) if value else 0
+                elif key in ['unit_price', 'calculated_price']:
+                    processed_data[key] = float(value) if value else 0.0
+                else:
+                    processed_data[key] = value
+
+            # Update last_updated date
+            processed_data['last_updated'] = datetime.now().strftime('%Y-%m-%d')
+
+            set_clause = ', '.join([f"{key} = ?" for key in processed_data.keys()])
+            query = f"UPDATE inventory_table SET {set_clause} WHERE id = ?"
+            params = list(processed_data.values()) + [record_id]
+
+            if execute_direct_query(query, params):
+                flash('Inventory item updated successfully!', 'success')
+                return redirect(url_for('inventory'))
+            else:
+                flash('Error updating inventory item', 'error')
+
+        except Exception as e:
+            flash(f'Error updating inventory item: {str(e)}', 'error')
+
+    return render_template('edit_inventory.html', record=record)
+
+@app.route('/inventory/delete/<int:record_id>', methods=['POST'])
+@login_required
+def delete_inventory(record_id):
+    try:
+        query = "DELETE FROM inventory_table WHERE id = ?"
+        if execute_direct_query(query, (record_id,)):
+            flash('Inventory item deleted successfully!', 'success')
+        else:
+            flash('Error deleting inventory item', 'error')
+    except Exception as e:
+        flash(f'Error deleting inventory item: {str(e)}', 'error')
+
+    return redirect(url_for('inventory'))
+
 # API endpoints (existing code)
 @app.route('/api/daily-book-closing')
 @login_required
@@ -701,6 +1057,20 @@ def api_payments():
 def api_invoices():
     try:
         data = get_direct_data('invoice_table')
+        return jsonify({
+            'draw': request.args.get('draw', type=int, default=1),
+            'recordsTotal': len(data),
+            'recordsFiltered': len(data),
+            'data': data
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/inventory')
+@login_required
+def api_inventory():
+    try:
+        data = get_direct_data('inventory_table')
         return jsonify({
             'draw': request.args.get('draw', type=int, default=1),
             'recordsTotal': len(data),
@@ -792,6 +1162,31 @@ def api_analytics():
     try:
         analytics = calculate_analytics()
         return jsonify(analytics)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/search/inventory')
+@login_required
+def search_inventory():
+    try:
+        search_term = request.args.get('q', '').strip().lower()
+        data = get_direct_data('inventory_table')
+
+        if search_term:
+            filtered_data = []
+            for record in data:
+                if (search_term in str(record.get('item_name', '')).lower() or
+                    search_term in str(record.get('category', '')).lower() or
+                    search_term in str(record.get('barcode', '')).lower()):
+                    filtered_data.append(record)
+            data = filtered_data
+
+        return jsonify({
+            'draw': request.args.get('draw', type=int, default=1),
+            'recordsTotal': len(data),
+            'recordsFiltered': len(data),
+            'data': data
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
