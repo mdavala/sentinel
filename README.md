@@ -1,11 +1,11 @@
-# Daily Delights - Smart Convenience Store Management System
+# Sentinel - Smart Convenience Store Management System
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-green.svg)
 ![Flask](https://img.shields.io/badge/flask-2.3+-red.svg)
 
 ## 📋 Table of Contents
-- [What is Daily Delights?](#what-is-daily-delights)
+- [What is Sentinel?](#what-is-sentinel)
 - [Understanding Convenience Store Operations](#understanding-convenience-store-operations)
 - [Key Features](#key-features)
 - [System Architecture](#system-architecture)
@@ -15,9 +15,9 @@
 - [Contributing](#contributing)
 - [License](#license)
 
-## 🏪 What is Daily Delights?
+## 🏪 What is Sentinel?
 
-Daily Delights is a comprehensive **AI-powered inventory and operations management system** designed specifically for convenience stores and small retail businesses. It automates the complex daily tasks that store owners face, from tracking inventory to processing payments and generating intelligent restocking recommendations.
+Sentinel is a comprehensive **AI-powered inventory and operations management system** designed specifically for convenience stores and small retail businesses. Originally developed for **Daily Delights**, a convenience store in Singapore, this system automates the complex daily tasks that store owners face, from tracking inventory to processing payments and generating intelligent restocking recommendations.
 
 Think of it as your **digital store assistant** that works 24/7 to keep your business running smoothly!
 
@@ -49,7 +49,7 @@ Think of it as your **digital store assistant** that works 24/7 to keep your bus
 3. **Evening**: Count cash register, record sales, note items running low
 4. **Weekly**: Review what needs to be ordered, process supplier payments
 
-### How Daily Delights Transforms This:
+### How Sentinel Transforms This:
 - **Automated inventory tracking** with AI-powered reorder suggestions
 - **Digital invoice processing** that extracts data from photos
 - **Smart payment management** with automated due date tracking
@@ -135,8 +135,8 @@ Think of it as your **digital store assistant** that works 24/7 to keep your bus
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/yourusername/daily-delights.git
-cd daily-delights
+git clone https://github.com/yourusername/sentinel.git
+cd sentinel
 ```
 
 ### Step 2: Install Dependencies
@@ -379,7 +379,7 @@ We welcome contributions from developers interested in retail technology and AI 
 - **Documentation**: Comprehensive guides in `/docs` folder
 - **Issues**: Report bugs and request features via GitHub Issues
 - **Discussions**: Join community discussions in GitHub Discussions
-- **Email**: Contact maintainers at support@dailydelights.com
+- **Email**: Contact maintainers at sgdailydelights@gmail.com
 
 ### Community
 - **Discord**: Join our developer community
@@ -403,6 +403,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Made with ❤️ for small business owners who deserve powerful, affordable technology.**
 
 > "Empowering every convenience store with AI-driven insights and automation."
+> *Originally developed for Daily Delights convenience store, Singapore*
 
 ---
 
