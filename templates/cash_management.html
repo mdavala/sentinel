@@ -1,0 +1,632 @@
+{% extends "base.html" %}
+
+{% block header %}Cash Management{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-money-bill-wave"></i> Cash Management</h5>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <!-- Date Range Toggle -->
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="dateRangeToggle">
+                <label class="form-check-label" for="dateRangeToggle">
+                    Date Range
+                </label>
+            </div>
+
+            <!-- Single Date Filter -->
+            <div class="input-group" id="singleDateGroup" style="width: 250px;">
+                <input type="date" id="dateFilter" class="form-control" value="{{ selected_date or today }}">
+                <button class="btn btn-outline-secondary" type="button" id="filterBtn">
+                    <i class="fas fa-search"></i> Filter
+                </button>
+            </div>
+
+            <!-- Date Range Filter -->
+            <div class="d-flex gap-2" id="dateRangeGroup" style="display: none;">
+                <div class="input-group" style="width: 150px;">
+                    <input type="date" id="startDate" class="form-control" placeholder="Start Date">
+                </div>
+                <div class="input-group" style="width: 150px;">
+                    <input type="date" id="endDate" class="form-control" placeholder="End Date">
+                </div>
+                <button class="btn btn-outline-secondary" type="button" id="rangeFilterBtn">
+                    <i class="fas fa-search"></i> Filter Range
+                </button>
+            </div>
+
+            <button class="btn btn-success btn-sm" onclick="window.open('https://t.me/ddSentinel_Bot', '_blank')">
+                <i class="fab fa-telegram"></i> Open Telegram Bot
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="loadingMessage" class="alert alert-info">Loading cash denomination data...</div>
+        <div id="errorMessage" class="alert alert-danger" style="display: none;"></div>
+
+        <!-- Cash Summary Cards -->
+        <div class="row mb-4" id="summaryCards" style="display: none;">
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 id="totalAmount">$0.00</h4>
+                                <p class="mb-0">Total Cash</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-dollar-sign fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 id="billsTotal">$0.00</h4>
+                                <p class="mb-0">Bills Total</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-money-bill fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 id="coinsTotal">$0.00</h4>
+                                <p class="mb-0">Coins Total</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-coins fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 id="entryInfo">--:--</h4>
+                                <p class="mb-0" id="entryInfoLabel">Entry Time</p>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-clock fa-2x" id="entryInfoIcon"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Date Range Summary Banner -->
+        <div class="alert alert-info" id="rangeSummary" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="mb-1"><i class="fas fa-calendar-alt"></i> Date Range Summary</h6>
+                    <span id="rangeDates">--</span>
+                </div>
+                <div class="text-end">
+                    <strong id="rangeEntries">-- entries</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- No Data Message -->
+        <div id="noDataMessage" class="alert alert-warning" style="display: none;">
+            <div class="text-center">
+                <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+                <h5>No cash denomination data found for this date</h5>
+                <p class="mb-3">Use the Telegram bot to enter cash denomination counts for today.</p>
+                <a href="https://t.me/ddSentinel_Bot" target="_blank" class="btn btn-primary">
+                    <i class="fab fa-telegram"></i> Open Telegram Bot
+                </a>
+            </div>
+        </div>
+
+        <!-- Date Range Data Table -->
+        <div id="rangeDataTable" style="display: none;">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="fas fa-table"></i> Cash Denomination Entries</h6>
+                    <button id="bulkDeleteBtn" class="btn btn-danger btn-sm" style="display: none;" onclick="showBulkDeleteModal(bulkDeleteCashEntries)">
+                        <i class="fas fa-trash"></i> Delete Selected <span class="badge bg-light text-dark">0</span>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" id="cashEntriesTable">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>
+                                        <input type="checkbox" id="selectAllCash" onchange="selectAllRows(this, 'cashEntriesTable')">
+                                    </th>
+                                    <th>Date</th>
+                                    <th>Time</th>
+                                    <th>Total Amount</th>
+                                    <th>Bills Total</th>
+                                    <th>Coins Total</th>
+                                    <th>Entered By</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cash Denomination Details -->
+        <div id="denominationDetails" style="display: none;">
+            <div class="row">
+                <!-- Bills Section -->
+                <div class="col-md-6 mb-4">
+                    <div class="card">
+                        <div class="card-header bg-success text-white">
+                            <h6 class="mb-0"><i class="fas fa-money-bill"></i> Bills</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Denomination</th>
+                                            <th>Quantity</th>
+                                            <th>Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="billsTable">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Coins Section -->
+                <div class="col-md-6 mb-4">
+                    <div class="card">
+                        <div class="card-header bg-warning text-white">
+                            <h6 class="mb-0"><i class="fas fa-coins"></i> Coins</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Denomination</th>
+                                            <th>Quantity</th>
+                                            <th>Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="coinsTable">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metadata -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-info-circle"></i> Entry Information</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <strong>Entry Date:</strong><br>
+                                    <span id="entryDate">--</span>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>Entry Time:</strong><br>
+                                    <span id="entryTimeDetail">--:--</span>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>Entered By:</strong><br>
+                                    <span id="enteredBy">--</span>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>Last Updated:</strong><br>
+                                    <span id="lastUpdated">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    console.log('Cash Management page loaded');
+
+    // Load data for the selected date
+    loadCashData();
+
+    // Date range toggle handler
+    $('#dateRangeToggle').change(function() {
+        if (this.checked) {
+            $('#singleDateGroup').hide();
+            $('#dateRangeGroup').show();
+        } else {
+            $('#singleDateGroup').show();
+            $('#dateRangeGroup').hide();
+            // Clear any existing range data when switching back to single date
+            $('#rangeDataTable').hide();
+            $('#rangeSummary').hide();
+        }
+    });
+
+    // Single date filter button click handler
+    $('#filterBtn').click(function() {
+        loadCashData();
+    });
+
+    // Date range filter button click handler
+    $('#rangeFilterBtn').click(function() {
+        loadCashDataRange();
+    });
+
+    // Date input change handler
+    $('#dateFilter').change(function() {
+        loadCashData();
+    });
+});
+
+function loadCashData() {
+    const selectedDate = $('#dateFilter').val();
+    console.log('Loading cash data for date:', selectedDate);
+
+    $('#loadingMessage').show();
+    $('#errorMessage').hide();
+    $('#summaryCards').hide();
+    $('#denominationDetails').hide();
+    $('#noDataMessage').hide();
+    $('#rangeDataTable').hide();
+    $('#rangeSummary').hide();
+
+    $.ajax({
+        url: '/api/cash-denomination',
+        method: 'GET',
+        data: { date: selectedDate },
+        success: function(response) {
+            $('#loadingMessage').hide();
+
+            if (response.success && response.data) {
+                displayCashData(response.data);
+            } else {
+                $('#noDataMessage').show();
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Error loading cash data:', error);
+            $('#loadingMessage').hide();
+            $('#errorMessage').text('Error loading cash denomination data: ' + error).show();
+        }
+    });
+}
+
+function loadCashDataRange() {
+    const startDate = $('#startDate').val();
+    const endDate = $('#endDate').val();
+
+    if (!startDate || !endDate) {
+        alert('Please select both start and end dates for the range.');
+        return;
+    }
+
+    if (startDate > endDate) {
+        alert('Start date cannot be later than end date.');
+        return;
+    }
+
+    console.log('Loading cash data for range:', startDate, 'to', endDate);
+
+    $('#loadingMessage').show();
+    $('#errorMessage').hide();
+    $('#summaryCards').hide();
+    $('#denominationDetails').hide();
+    $('#noDataMessage').hide();
+    $('#rangeDataTable').hide();
+    $('#rangeSummary').hide();
+
+    $.ajax({
+        url: '/api/cash-denomination',
+        method: 'GET',
+        data: {
+            start_date: startDate,
+            end_date: endDate
+        },
+        success: function(response) {
+            $('#loadingMessage').hide();
+
+            if (response.success && response.data && response.data.length > 0) {
+                displayCashDataRange(response.data, response.summary);
+            } else {
+                $('#noDataMessage').show();
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Error loading cash data range:', error);
+            $('#loadingMessage').hide();
+            $('#errorMessage').text('Error loading cash denomination data range: ' + error).show();
+        }
+    });
+}
+
+function displayCashData(data) {
+    console.log('Displaying cash data:', data);
+
+    // Update summary cards
+    $('#totalAmount').text('$' + parseFloat(data.grand_total || 0).toFixed(2));
+
+    // Calculate bills and coins totals
+    const billsTotal = (data.dollar_100_total || 0) + (data.dollar_50_total || 0) +
+                      (data.dollar_10_total || 0) + (data.dollar_5_total || 0) +
+                      (data.dollar_2_total || 0);
+
+    const coinsTotal = (data.dollar_1_total || 0) + (data.cent_50_total || 0) + (data.cent_20_total || 0) +
+                      (data.cent_10_total || 0) + (data.cent_5_total || 0);
+
+    $('#billsTotal').text('$' + billsTotal.toFixed(2));
+    $('#coinsTotal').text('$' + coinsTotal.toFixed(2));
+    $('#entryInfo').text(data.entry_time || '--:--');
+
+    // Populate bills table
+    const billsData = [
+        { name: '$100', qty: data.dollar_100_qty || 0, total: data.dollar_100_total || 0 },
+        { name: '$50', qty: data.dollar_50_qty || 0, total: data.dollar_50_total || 0 },
+        { name: '$10', qty: data.dollar_10_qty || 0, total: data.dollar_10_total || 0 },
+        { name: '$5', qty: data.dollar_5_qty || 0, total: data.dollar_5_total || 0 },
+        { name: '$2', qty: data.dollar_2_qty || 0, total: data.dollar_2_total || 0 }
+    ];
+
+    let billsHtml = '';
+    billsData.forEach(function(item) {
+        if (item.qty > 0) {
+            billsHtml += `
+                <tr>
+                    <td><strong>${item.name}</strong></td>
+                    <td>${item.qty}</td>
+                    <td>$${parseFloat(item.total).toFixed(2)}</td>
+                </tr>
+            `;
+        }
+    });
+
+    if (billsHtml === '') {
+        billsHtml = '<tr><td colspan="3" class="text-center text-muted">No bills recorded</td></tr>';
+    }
+    $('#billsTable').html(billsHtml);
+
+    // Populate coins table
+    const coinsData = [
+        { name: '$1', qty: data.dollar_1_qty || 0, total: data.dollar_1_total || 0 },
+        { name: '50¢', qty: data.cent_50_qty || 0, total: data.cent_50_total || 0 },
+        { name: '20¢', qty: data.cent_20_qty || 0, total: data.cent_20_total || 0 },
+        { name: '10¢', qty: data.cent_10_qty || 0, total: data.cent_10_total || 0 },
+        { name: '5¢', qty: data.cent_5_qty || 0, total: data.cent_5_total || 0 }
+    ];
+
+    let coinsHtml = '';
+    coinsData.forEach(function(item) {
+        if (item.qty > 0) {
+            coinsHtml += `
+                <tr>
+                    <td><strong>${item.name}</strong></td>
+                    <td>${item.qty}</td>
+                    <td>$${parseFloat(item.total).toFixed(2)}</td>
+                </tr>
+            `;
+        }
+    });
+
+    if (coinsHtml === '') {
+        coinsHtml = '<tr><td colspan="3" class="text-center text-muted">No coins recorded</td></tr>';
+    }
+    $('#coinsTable').html(coinsHtml);
+
+    // Update metadata
+    $('#entryDate').text(data.entry_date || '--');
+    $('#entryTimeDetail').text(data.entry_time || '--:--');
+    $('#enteredBy').text(data.telegram_username || '--');
+
+    const updatedAt = data.updated_at || data.created_at;
+    if (updatedAt) {
+        const date = new Date(updatedAt);
+        $('#lastUpdated').text(date.toLocaleString());
+    } else {
+        $('#lastUpdated').text('--');
+    }
+
+    // Show sections
+    $('#summaryCards').show();
+    $('#denominationDetails').show();
+}
+
+function displayCashDataRange(dataArray, summary) {
+    console.log('Displaying cash data range:', dataArray, summary);
+
+    // Update summary cards with aggregated totals
+    $('#totalAmount').text('$' + parseFloat(summary.total_amount || 0).toFixed(2));
+    $('#billsTotal').text('$' + parseFloat(summary.bills_total || 0).toFixed(2));
+    $('#coinsTotal').text('$' + parseFloat(summary.coins_total || 0).toFixed(2));
+
+    // Update the fourth card to show number of entries
+    $('#entryInfo').text(dataArray.length);
+    $('#entryInfoLabel').text('Total Entries');
+    $('#entryInfoIcon').removeClass('fa-clock').addClass('fa-list');
+
+    // Update range summary banner
+    const startDate = $('#startDate').val();
+    const endDate = $('#endDate').val();
+    const startFormatted = new Date(startDate).toLocaleDateString();
+    const endFormatted = new Date(endDate).toLocaleDateString();
+
+    $('#rangeDates').text(`${startFormatted} - ${endFormatted}`);
+    $('#rangeEntries').text(`${dataArray.length} entries`);
+    $('#rangeSummary').show();
+
+    // Populate the data table
+    let tableHtml = '';
+    dataArray.forEach(function(entry) {
+        const billsTotal = (entry.dollar_100_total || 0) + (entry.dollar_50_total || 0) +
+                          (entry.dollar_10_total || 0) + (entry.dollar_5_total || 0) +
+                          (entry.dollar_2_total || 0);
+
+        const coinsTotal = (entry.dollar_1_total || 0) + (entry.cent_50_total || 0) + (entry.cent_20_total || 0) +
+                          (entry.cent_10_total || 0) + (entry.cent_5_total || 0);
+
+        const entryDate = new Date(entry.entry_date).toLocaleDateString();
+
+        tableHtml += `
+            <tr>
+                <td>
+                    <input type="checkbox" data-row-id="${entry.id}" onchange="toggleRowSelection(this, ${entry.id})">
+                </td>
+                <td>${entryDate}</td>
+                <td>${entry.entry_time || '--:--'}</td>
+                <td>$${parseFloat(entry.grand_total || 0).toFixed(2)}</td>
+                <td>$${billsTotal.toFixed(2)}</td>
+                <td>$${coinsTotal.toFixed(2)}</td>
+                <td>${entry.telegram_username || '--'}</td>
+                <td>
+                    <button class="btn btn-sm btn-info me-1" onclick="viewEntryDetails('${entry.entry_date}')">
+                        <i class="fas fa-eye"></i> View
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteCashEntry(${entry.id}, '${entry.entry_date}')">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    $('#cashEntriesTable tbody').html(tableHtml);
+
+    // Show sections
+    $('#summaryCards').show();
+    $('#rangeDataTable').show();
+}
+
+function viewEntryDetails(entryDate) {
+    // Set the single date filter to the selected date
+    $('#dateFilter').val(entryDate);
+
+    // Switch back to single date mode
+    $('#dateRangeToggle').prop('checked', false);
+    $('#singleDateGroup').show();
+    $('#dateRangeGroup').hide();
+    $('#rangeDataTable').hide();
+    $('#rangeSummary').hide();
+
+    // Load the single entry data
+    loadCashData();
+}
+
+// Delete single cash entry
+function deleteCashEntry(entryId, entryDate) {
+    const message = `Are you sure you want to delete the cash denomination entry for ${entryDate}? This action cannot be undone.`;
+
+    showCustomConfirm(message, function() {
+        $.ajax({
+            url: `/api/cash-denomination/delete/${entryId}`,
+            method: 'POST',
+            success: function(response) {
+                if (response.success) {
+                    showFlashMessage('Cash denomination entry deleted successfully!', 'success');
+                    // Refresh the appropriate view
+                    if ($('#dateRangeToggle').is(':checked')) {
+                        loadCashDataRange();
+                    } else {
+                        loadCashData();
+                    }
+                } else {
+                    showFlashMessage('Error deleting entry: ' + response.error, 'error');
+                }
+            },
+            error: function(xhr, status, error) {
+                showFlashMessage('Error deleting entry: ' + error, 'error');
+            }
+        });
+    });
+}
+
+// Bulk delete cash entries
+function bulkDeleteCashEntries(selectedIds) {
+    $.ajax({
+        url: '/api/bulk-delete/cash-denomination',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ ids: selectedIds }),
+        success: function(response) {
+            if (response.success) {
+                showFlashMessage(`Successfully deleted ${response.deleted_count} cash denomination entries!`, 'success');
+                // Clear selections
+                selectedRows = [];
+                updateBulkDeleteButton();
+                // Refresh the view
+                if ($('#dateRangeToggle').is(':checked')) {
+                    loadCashDataRange();
+                } else {
+                    loadCashData();
+                }
+            } else {
+                showFlashMessage('Error deleting entries: ' + response.error, 'error');
+            }
+        },
+        error: function(xhr, status, error) {
+            showFlashMessage('Error deleting entries: ' + error, 'error');
+        }
+    });
+}
+
+// Show flash message function
+function showFlashMessage(message, category) {
+    // Remove any existing flash messages
+    $('.dynamic-flash-message').remove();
+
+    // Create the flash message HTML
+    const alertClass = category === 'error' ? 'alert-danger' : `alert-${category}`;
+    const iconClass = category === 'error' ? 'fas fa-exclamation-triangle' :
+                     category === 'success' ? 'fas fa-check-circle' : 'fas fa-info-circle';
+
+    const flashHtml = `
+        <div class="alert ${alertClass} alert-dismissible fade show dynamic-flash-message" role="alert">
+            <i class="${iconClass}"></i> ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    `;
+
+    // Insert the flash message at the top of the card body
+    $('.card-body').first().prepend(flashHtml);
+
+    // Auto-dismiss after 5 seconds
+    setTimeout(function() {
+        $('.dynamic-flash-message').fadeOut(function() {
+            $(this).remove();
+        });
+    }, 5000);
+}
+</script>
+{% endblock %}
