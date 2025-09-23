@@ -197,7 +197,7 @@ def calculate_analytics():
         cursor.execute("SELECT COUNT(*) FROM payments_table")
         analytics['counts']['payments_count'] = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM invoice_table")
+        cursor.execute("SELECT COUNT(DISTINCT invoice_number) FROM invoice_table")
         analytics['counts']['invoice_count'] = cursor.fetchone()[0]
 
         # Total revenue from daily book closing
@@ -425,6 +425,185 @@ def inventory():
 @login_required
 def order_recommendations():
     return render_template('order_recommendations.html')
+
+# ==========================================
+# Cash Management Routes
+# ==========================================
+
+@app.route('/cash-management')
+@login_required
+def cash_management():
+    """Display cash management page"""
+    today = date.today().strftime('%Y-%m-%d')
+    selected_date = request.args.get('date', today)
+    return render_template('cash_management.html',
+                         selected_date=selected_date,
+                         today=today)
+
+@app.route('/api/cash-denomination')
+@login_required
+def api_cash_denomination():
+    """Get cash denomination data for a specific date or date range"""
+    try:
+        selected_date = request.args.get('date')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        if start_date and end_date:
+            # Date range query
+            cursor.execute("""
+                SELECT * FROM cash_denomination_table
+                WHERE entry_date BETWEEN ? AND ?
+                ORDER BY entry_date DESC
+            """, (start_date, end_date))
+
+            rows = cursor.fetchall()
+
+            if rows:
+                columns = [desc[0] for desc in cursor.description]
+                data = [dict(zip(columns, row)) for row in rows]
+
+                # Calculate totals for the date range
+                total_grand_total = sum(row.get('grand_total', 0) or 0 for row in data)
+                total_bills = sum((row.get('dollar_100_total', 0) or 0) +
+                                (row.get('dollar_50_total', 0) or 0) +
+                                (row.get('dollar_10_total', 0) or 0) +
+                                (row.get('dollar_5_total', 0) or 0) +
+                                (row.get('dollar_2_total', 0) or 0) for row in data)
+                total_coins = sum((row.get('dollar_1_total', 0) or 0) +
+                                (row.get('cent_50_total', 0) or 0) +
+                                (row.get('cent_20_total', 0) or 0) +
+                                (row.get('cent_10_total', 0) or 0) +
+                                (row.get('cent_5_total', 0) or 0) for row in data)
+
+                conn.close()
+                return jsonify({
+                    'success': True,
+                    'data': data,
+                    'is_range': True,
+                    'summary': {
+                        'total_amount': total_grand_total,
+                        'bills_total': total_bills,
+                        'coins_total': total_coins,
+                        'total_entries': len(data),
+                        'start_date': start_date,
+                        'end_date': end_date
+                    }
+                })
+            else:
+                conn.close()
+                return jsonify({
+                    'success': False,
+                    'message': f'No cash denomination data found for date range {start_date} to {end_date}'
+                })
+
+        else:
+            # Single date query (default to today if no date provided)
+            if not selected_date:
+                selected_date = date.today().strftime('%Y-%m-%d')
+
+            cursor.execute("""
+                SELECT * FROM cash_denomination_table
+                WHERE entry_date = ?
+            """, (selected_date,))
+
+            row = cursor.fetchone()
+
+            if row:
+                # Convert row to dictionary
+                columns = [desc[0] for desc in cursor.description]
+                data = dict(zip(columns, row))
+                conn.close()
+
+                return jsonify({
+                    'success': True,
+                    'data': data,
+                    'is_range': False
+                })
+            else:
+                conn.close()
+                return jsonify({
+                    'success': False,
+                    'message': f'No cash denomination data found for {selected_date}'
+                })
+
+    except Exception as e:
+        print(f"Error fetching cash denomination data: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# Cash Management Delete Routes
+@app.route('/api/cash-denomination/delete/<int:record_id>', methods=['POST'])
+@login_required
+def delete_cash_denomination(record_id):
+    """Delete a cash denomination entry"""
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Check if record exists first
+        cursor.execute('SELECT * FROM cash_denomination_table WHERE id = ?', (record_id,))
+        record = cursor.fetchone()
+
+        if not record:
+            conn.close()
+            return jsonify({
+                'success': False,
+                'error': 'Cash denomination record not found'
+            }), 404
+
+        # Delete the record
+        cursor.execute('DELETE FROM cash_denomination_table WHERE id = ?', (record_id,))
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Cash denomination record for {record[1]} deleted successfully'
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/bulk-delete/cash-denomination', methods=['POST'])
+@login_required
+def bulk_delete_cash_denomination():
+    """Bulk delete cash denomination entries"""
+    try:
+        data = request.get_json()
+        ids = data.get('ids', [])
+
+        if not ids:
+            return jsonify({'success': False, 'error': 'No record IDs provided'}), 400
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Build the SQL for bulk delete
+        placeholders = ','.join(['?' for _ in ids])
+        query = f'DELETE FROM cash_denomination_table WHERE id IN ({placeholders})'
+
+        cursor.execute(query, ids)
+        deleted_count = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully deleted {deleted_count} cash denomination record(s)',
+            'deleted_count': deleted_count
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Order Recommendations API Routes
 @app.route('/api/order-recommendations')
@@ -1189,6 +1368,103 @@ def search_inventory():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# Bulk Delete Routes
+@app.route('/api/bulk-delete/invoices', methods=['POST'])
+@login_required
+def bulk_delete_invoices():
+    try:
+        data = request.get_json()
+        if not data or 'ids' not in data:
+            return jsonify({'success': False, 'error': 'No IDs provided'}), 400
+
+        ids = data['ids']
+        if not ids:
+            return jsonify({'success': False, 'error': 'Empty ID list'}), 400
+
+        # Create placeholders for SQL IN clause
+        placeholders = ', '.join(['?' for _ in ids])
+        query = f"DELETE FROM invoice_table WHERE id IN ({placeholders})"
+
+        if execute_direct_query(query, ids):
+            return jsonify({'success': True, 'deleted_count': len(ids)})
+        else:
+            return jsonify({'success': False, 'error': 'Database error'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/bulk-delete/inventory', methods=['POST'])
+@login_required
+def bulk_delete_inventory():
+    try:
+        data = request.get_json()
+        if not data or 'ids' not in data:
+            return jsonify({'success': False, 'error': 'No IDs provided'}), 400
+
+        ids = data['ids']
+        if not ids:
+            return jsonify({'success': False, 'error': 'Empty ID list'}), 400
+
+        # Create placeholders for SQL IN clause
+        placeholders = ', '.join(['?' for _ in ids])
+        query = f"DELETE FROM product_table WHERE id IN ({placeholders})"
+
+        if execute_direct_query(query, ids):
+            return jsonify({'success': True, 'deleted_count': len(ids)})
+        else:
+            return jsonify({'success': False, 'error': 'Database error'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/bulk-delete/payments', methods=['POST'])
+@login_required
+def bulk_delete_payments():
+    try:
+        data = request.get_json()
+        if not data or 'ids' not in data:
+            return jsonify({'success': False, 'error': 'No IDs provided'}), 400
+
+        ids = data['ids']
+        if not ids:
+            return jsonify({'success': False, 'error': 'Empty ID list'}), 400
+
+        # Create placeholders for SQL IN clause
+        placeholders = ', '.join(['?' for _ in ids])
+        query = f"DELETE FROM payments_table WHERE id IN ({placeholders})"
+
+        if execute_direct_query(query, ids):
+            return jsonify({'success': True, 'deleted_count': len(ids)})
+        else:
+            return jsonify({'success': False, 'error': 'Database error'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/bulk-delete/daily-book-closing', methods=['POST'])
+@login_required
+def bulk_delete_daily_book_closing():
+    try:
+        data = request.get_json()
+        if not data or 'ids' not in data:
+            return jsonify({'success': False, 'error': 'No IDs provided'}), 400
+
+        ids = data['ids']
+        if not ids:
+            return jsonify({'success': False, 'error': 'Empty ID list'}), 400
+
+        # Create placeholders for SQL IN clause
+        placeholders = ', '.join(['?' for _ in ids])
+        query = f"DELETE FROM daily_book_closing_table WHERE id IN ({placeholders})"
+
+        if execute_direct_query(query, ids):
+            return jsonify({'success': True, 'deleted_count': len(ids)})
+        else:
+            return jsonify({'success': False, 'error': 'Database error'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Debug routes (existing)
 @app.route('/debug-db')

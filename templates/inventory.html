@@ -13,6 +13,9 @@
             <button class="btn btn-info btn-sm" onclick="updateInventory()" title="Update inventory from invoices">
                 <i class="fas fa-sync-alt"></i> Update Inventory
             </button>
+            <button class="btn btn-danger btn-sm" id="bulkDeleteBtn" style="display: none;" onclick="showBulkDeleteModal(bulkDeleteInventory)">
+                <i class="fas fa-trash"></i> Delete Selected <span class="badge bg-light text-dark">0</span>
+            </button>
             <div class="input-group" style="width: 300px;">
                 <input type="text" id="searchInput" class="form-control" placeholder="Search inventory...">
                 <button class="btn btn-outline-secondary" type="button" id="searchBtn">
@@ -93,6 +96,9 @@
             <table id="inventoryTable" class="table table-striped table-hover">
                 <thead class="table-dark">
                     <tr>
+                        <th>
+                            <input type="checkbox" id="selectAll" onchange="selectAllRows(this, 'inventoryTable')">
+                        </th>
                         <th>ID</th>
                         <th>Item Name</th>
                         <th>Category</th>
@@ -188,6 +194,13 @@ $(document).ready(function() {
                 }
             },
             "columns": [
+                {
+                    "data": null,
+                    "orderable": false,
+                    "render": function(data, type, row) {
+                        return `<input type="checkbox" data-row-id="${row.id}" onchange="toggleRowSelection(this, ${row.id})">`;
+                    }
+                },
                 {"data": "id"},
                 {"data": "item_name"},
                 {"data": "category"},
@@ -240,7 +253,7 @@ $(document).ready(function() {
                     }
                 }
             ],
-            "order": [[ 3, "desc" ]], // Sort by quantity descending
+            "order": [[ 4, "desc" ]], // Sort by quantity descending
             "pageLength": 25,
             "language": {
                 "processing": "Loading inventory...",
@@ -390,15 +403,70 @@ function showDetails(recordId) {
 
 // Global function for deleting records
 function deleteRecord(recordId) {
-    if (confirm('Are you sure you want to delete this inventory item? This action cannot be undone.')) {
-        // Create a form and submit it for DELETE request
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/inventory/delete/${recordId}`;
-        form.style.display = 'none';
-        document.body.appendChild(form);
-        form.submit();
-    }
+    showCustomConfirm(
+        'Are you sure you want to delete 1 inventory item? This action cannot be undone.',
+        function() {
+            // Create a form and submit it for DELETE request
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/inventory/delete/${recordId}`;
+            form.style.display = 'none';
+            document.body.appendChild(form);
+            form.submit();
+        }
+    );
+}
+
+// Bulk delete function for inventory
+function bulkDeleteInventory(selectedIds) {
+    if (selectedIds.length === 0) return;
+
+    // Show loading message
+    const loadingAlert = $('<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Deleting selected records...</div>');
+    $('.card-body').prepend(loadingAlert);
+
+    // Use AJAX to call the bulk delete endpoint
+    $.ajax({
+        url: '/api/bulk-delete/inventory',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ids: selectedIds}),
+        success: function(response) {
+            loadingAlert.remove();
+            if (response.success) {
+                // Show success message
+                const successAlert = $(`<div class="alert alert-success alert-dismissible fade show">
+                    <i class="fas fa-check"></i> Successfully deleted ${response.deleted_count} inventory items!
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`);
+                $('.card-body').prepend(successAlert);
+
+                // Reload table data
+                if (window.inventoryTable) {
+                    window.inventoryTable.ajax.reload();
+                }
+
+                // Auto-remove alert after 5 seconds
+                setTimeout(() => successAlert.alert('close'), 5000);
+            } else {
+                // Show error message
+                const errorAlert = $(`<div class="alert alert-danger alert-dismissible fade show">
+                    <i class="fas fa-exclamation-triangle"></i> Error: ${response.error}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`);
+                $('.card-body').prepend(errorAlert);
+            }
+        },
+        error: function(xhr, status, error) {
+            loadingAlert.remove();
+            console.error('Bulk delete error:', error);
+            const errorAlert = $(`<div class="alert alert-danger alert-dismissible fade show">
+                <i class="fas fa-exclamation-triangle"></i> Error deleting records: ${error}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`);
+            $('.card-body').prepend(errorAlert);
+        }
+    });
 }
 </script>
 {% endblock %}

@@ -62,6 +62,11 @@
                             </a>
                         </li>
                         <li class="nav-item mb-2">
+                            <a class="nav-link" href="{{ url_for('cash_management') }}">
+                                <i class="fas fa-money-bill-wave"></i> Cash Management
+                            </a>
+                        </li>
+                        <li class="nav-item mb-2">
                             <a class="nav-link" href="{{ url_for('payments') }}">
                                 <i class="fas fa-credit-card"></i> Payments
                             </a>
@@ -119,6 +124,60 @@
         {% block login_content %}{% endblock %}
     {% endif %}
 
+    <!-- Global Custom Confirmation Modal -->
+    <div class="modal fade" id="customConfirmModal" tabindex="-1" aria-labelledby="customConfirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="customConfirmModalLabel">
+                        <i class="fas fa-question-circle text-warning"></i> Confirmation Required
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="customConfirmMessage">Are you sure you want to proceed?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger" data-bs-dismiss="modal" id="customConfirmNo">
+                        <i class="fas fa-times"></i> NO
+                    </button>
+                    <button type="button" class="btn btn-success" id="customConfirmYes">
+                        <i class="fas fa-check"></i> YES
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Bulk Delete Modal -->
+    <div class="modal fade" id="bulkDeleteModal" tabindex="-1" aria-labelledby="bulkDeleteModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="bulkDeleteModalLabel">
+                        <i class="fas fa-trash text-danger"></i> Bulk Delete Confirmation
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="bulkDeleteMessage">Are you sure you want to delete the selected items?</p>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        This action cannot be undone!
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="button" class="btn btn-danger" id="bulkDeleteConfirm">
+                        <i class="fas fa-trash"></i> Delete Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Load JavaScript libraries in the correct order -->
     <!-- 1. jQuery first -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
@@ -128,7 +187,99 @@
     <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
     <!-- 4. DataTables Bootstrap integration -->
     <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
-    
+
+    <!-- Global JavaScript Functions -->
+    <script>
+        // Global custom confirmation function
+        function showCustomConfirm(message, onConfirm, onCancel = null) {
+            $('#customConfirmMessage').text(message);
+            $('#customConfirmModal').modal('show');
+
+            // Remove any existing event listeners
+            $('#customConfirmYes').off('click');
+            $('#customConfirmNo').off('click');
+
+            // Add new event listeners
+            $('#customConfirmYes').on('click', function() {
+                $('#customConfirmModal').modal('hide');
+                if (onConfirm) onConfirm();
+            });
+
+            $('#customConfirmNo').on('click', function() {
+                $('#customConfirmModal').modal('hide');
+                if (onCancel) onCancel();
+            });
+        }
+
+        // Global bulk delete functionality
+        let selectedRows = [];
+        let currentTable = null;
+        let bulkDeleteAction = null;
+
+        function toggleRowSelection(checkbox, rowId) {
+            if (checkbox.checked) {
+                if (!selectedRows.includes(rowId)) {
+                    selectedRows.push(rowId);
+                }
+            } else {
+                selectedRows = selectedRows.filter(id => id !== rowId);
+            }
+            updateBulkDeleteButton();
+        }
+
+        function selectAllRows(selectAllCheckbox, tableId) {
+            const table = document.getElementById(tableId);
+            const checkboxes = table.querySelectorAll('tbody input[type="checkbox"]');
+
+            selectedRows = [];
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+                if (selectAllCheckbox.checked) {
+                    const rowId = parseInt(checkbox.getAttribute('data-row-id'));
+                    selectedRows.push(rowId);
+                }
+            });
+            updateBulkDeleteButton();
+        }
+
+        function updateBulkDeleteButton() {
+            const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+            if (bulkDeleteBtn) {
+                if (selectedRows.length > 0) {
+                    bulkDeleteBtn.style.display = 'inline-block';
+                    bulkDeleteBtn.querySelector('.badge').textContent = selectedRows.length;
+                } else {
+                    bulkDeleteBtn.style.display = 'none';
+                }
+            }
+        }
+
+        function showBulkDeleteModal(deleteFunction) {
+            if (selectedRows.length === 0) {
+                alert('Please select items to delete');
+                return;
+            }
+
+            bulkDeleteAction = deleteFunction;
+            const count = selectedRows.length;
+            const itemText = count === 1 ? 'record' : 'records';
+            $('#bulkDeleteMessage').text(`Are you sure you want to delete ${count} selected ${itemText}? This action cannot be undone.`);
+            $('#bulkDeleteModal').modal('show');
+        }
+
+        // Bulk delete confirmation handler
+        $(document).ready(function() {
+            $('#bulkDeleteConfirm').on('click', function() {
+                $('#bulkDeleteModal').modal('hide');
+                if (bulkDeleteAction) {
+                    bulkDeleteAction(selectedRows);
+                    selectedRows = [];
+                    updateBulkDeleteButton();
+                }
+            });
+        });
+    </script>
+
     <!-- Page-specific scripts -->
     {% block scripts %}{% endblock %}
 </body>

@@ -13,6 +13,9 @@
             <button class="btn btn-success btn-sm" onclick="updateDailyBookClosing()" title="Process daily book closing images from Google Drive">
                 <i class="fas fa-sync-alt"></i> Update Daily Book Closing
             </button>
+            <button class="btn btn-danger btn-sm" id="bulkDeleteBtn" style="display: none;" onclick="showBulkDeleteModal(bulkDeleteDailyBookClosing)">
+                <i class="fas fa-trash"></i> Delete Selected <span class="badge bg-light text-dark">0</span>
+            </button>
             <div class="input-group" style="width: 300px;">
                 <input type="text" id="searchInput" class="form-control" placeholder="Search records...">
                 <button class="btn btn-outline-secondary" type="button" id="searchBtn">
@@ -29,6 +32,9 @@
             <table id="dailyBookTable" class="table table-striped table-hover">
                 <thead class="table-dark">
                     <tr>
+                        <th>
+                            <input type="checkbox" id="selectAll" onchange="selectAllRows(this, 'dailyBookTable')">
+                        </th>
                         <th>ID</th>
                         <th>Closing Date</th>
                         <th>Total Sales</th>
@@ -100,6 +106,13 @@ $(document).ready(function() {
                 }
             },
             "columns": [
+                {
+                    "data": null,
+                    "orderable": false,
+                    "render": function(data, type, row) {
+                        return `<input type="checkbox" data-row-id="${row.id}" onchange="toggleRowSelection(this, ${row.id})">`;
+                    }
+                },
                 {"data": "id"},
                 {"data": "closing_date"},
                 {
@@ -153,7 +166,7 @@ $(document).ready(function() {
                     }
                 }
             ],
-            "order": [[ 0, "desc" ]],
+            "order": [[ 1, "desc" ]],
             "pageLength": 25,
             "language": {
                 "processing": "Loading data...",
@@ -244,34 +257,92 @@ function showDetails(recordId) {
 
 // Global function for deleting records
 function deleteRecord(recordId) {
-    if (confirm('Are you sure you want to delete this record? This action cannot be undone.')) {
-        // Create a form and submit it for DELETE request
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/daily-book-closing/delete/${recordId}`;
-        form.style.display = 'none';
-        document.body.appendChild(form);
-        form.submit();
-    }
+    showCustomConfirm(
+        'Are you sure you want to delete 1 daily book closing record? This action cannot be undone.',
+        function() {
+            // Create a form and submit it for DELETE request
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/daily-book-closing/delete/${recordId}`;
+            form.style.display = 'none';
+            document.body.appendChild(form);
+            form.submit();
+        }
+    );
 }
 
 // Global function for updating daily book closing from Google Drive
 function updateDailyBookClosing() {
-    if (confirm('This will process daily book closing images from Google Drive and may take several minutes. Continue?')) {
-        // Show loading indicator
-        const button = event.target.closest('button');
-        const originalHtml = button.innerHTML;
-        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-        button.disabled = true;
+    showCustomConfirm(
+        'This will process daily book closing images from Google Drive and may take several minutes. Continue?',
+        function() {
+            // Show loading indicator
+            const button = event.target.closest('button');
+            const originalHtml = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            button.disabled = true;
 
-        // Create and submit form
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/daily-book-closing/update';
-        form.style.display = 'none';
-        document.body.appendChild(form);
-        form.submit();
-    }
+            // Create and submit form
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/daily-book-closing/update';
+            form.style.display = 'none';
+            document.body.appendChild(form);
+            form.submit();
+        }
+    );
+}
+
+// Bulk delete function for daily book closing
+function bulkDeleteDailyBookClosing(selectedIds) {
+    if (selectedIds.length === 0) return;
+
+    // Show loading message
+    const loadingAlert = $('<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Deleting selected records...</div>');
+    $('.card-body').prepend(loadingAlert);
+
+    // Use AJAX to call the bulk delete endpoint
+    $.ajax({
+        url: '/api/bulk-delete/daily-book-closing',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ids: selectedIds}),
+        success: function(response) {
+            loadingAlert.remove();
+            if (response.success) {
+                // Show success message
+                const successAlert = $(`<div class="alert alert-success alert-dismissible fade show">
+                    <i class="fas fa-check"></i> Successfully deleted ${response.deleted_count} daily book closing records!
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`);
+                $('.card-body').prepend(successAlert);
+
+                // Reload table data
+                if (window.dailyBookTable) {
+                    window.dailyBookTable.ajax.reload();
+                }
+
+                // Auto-remove alert after 5 seconds
+                setTimeout(() => successAlert.alert('close'), 5000);
+            } else {
+                // Show error message
+                const errorAlert = $(`<div class="alert alert-danger alert-dismissible fade show">
+                    <i class="fas fa-exclamation-triangle"></i> Error: ${response.error}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`);
+                $('.card-body').prepend(errorAlert);
+            }
+        },
+        error: function(xhr, status, error) {
+            loadingAlert.remove();
+            console.error('Bulk delete error:', error);
+            const errorAlert = $(`<div class="alert alert-danger alert-dismissible fade show">
+                <i class="fas fa-exclamation-triangle"></i> Error deleting records: ${error}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`);
+            $('.card-body').prepend(errorAlert);
+        }
+    });
 }
 </script>
 {% endblock %}

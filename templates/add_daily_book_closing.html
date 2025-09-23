@@ -66,8 +66,8 @@
                     <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="aha_credit_amount" class="form-label">AHA Credit Amount</label>
-                                <input type="number" step="0.01" class="form-control" id="aha_credit_amount" name="aha_credit_amount" placeholder="0.00">
+                                <label for="credit_amount" class="form-label">Credit Amount</label>
+                                <input type="number" step="0.01" class="form-control" id="credit_amount" name="credit_amount" placeholder="0.00">
                             </div>
                         </div>
                         <div class="col-md-6">
@@ -98,12 +98,6 @@
                     <!-- Credits and Voids -->
                     <h6 class="mb-3 mt-4 text-warning border-bottom pb-2">Credits & Voids</h6>
                     <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="total_credit_given" class="form-label">Total Credit Given</label>
-                                <input type="number" step="0.01" class="form-control" id="total_credit_given" name="total_credit_given" placeholder="0.00">
-                            </div>
-                        </div>
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="voided_transactions" class="form-label">Voided Transactions</label>
@@ -167,23 +161,23 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-calculate total settlement
     const netsQr = document.getElementById('nets_qr_amount');
     const cash = document.getElementById('cash_amount');
-    const ahaCredit = document.getElementById('aha_credit_amount');
+    const credit = document.getElementById('credit_amount');
     const nets = document.getElementById('nets_amount');
     const totalSettlement = document.getElementById('total_settlement');
     
     function calculateTotalSettlement() {
         const netsQrVal = parseFloat(netsQr.value) || 0;
         const cashVal = parseFloat(cash.value) || 0;
-        const ahaCreditVal = parseFloat(ahaCredit.value) || 0;
+        const creditVal = parseFloat(credit.value) || 0;
         const netsVal = parseFloat(nets.value) || 0;
         
-        const total = netsQrVal + cashVal + ahaCreditVal + netsVal;
+        const total = netsQrVal + cashVal + creditVal + netsVal;
         if (total > 0) {
             totalSettlement.value = total.toFixed(2);
         }
     }
     
-    [netsQr, cash, ahaCredit, nets].forEach(field => {
+    [netsQr, cash, credit, nets].forEach(field => {
         field.addEventListener('input', calculateTotalSettlement);
     });
 });

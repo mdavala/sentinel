@@ -371,13 +371,16 @@ function showProductDetails(productName, supplierName) {
 }
 
 function markAsOrdered(supplierName) {
-    if (confirm(`Mark all recommended products from ${supplierName} as ordered?`)) {
-        // This could be enhanced to actually update the system
-        alert(`Order marked for ${supplierName}. This feature will be enhanced to update the tracking system.`);
+    showCustomConfirm(
+        `Mark all recommended products from ${supplierName} as ordered?`,
+        function() {
+            // This could be enhanced to actually update the system
+            alert(`Order marked for ${supplierName}. This feature will be enhanced to update the tracking system.`);
 
-        // Refresh recommendations after marking as ordered
-        loadRecommendations();
-    }
+            // Refresh recommendations after marking as ordered
+            loadRecommendations();
+        }
+    );
 }
 </script>
 {% endblock %}
