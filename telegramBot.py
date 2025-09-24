@@ -5,7 +5,7 @@ import tempfile
 import logging
 import asyncio
 import sqlite3
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 # Google Drive imports (OAuth2 - same as stockSentinel.py)
 from google.auth.transport.requests import Request
@@ -49,7 +49,7 @@ upload_counters = {}  # Added missing upload_counters dictionary
 upload_locks = {}  # To prevent concurrent upload issues per user
 
 # Conversation states for cash denomination
-(DENOMINATION_START, DENOMINATION_INPUT, DENOMINATION_CONFIRM) = range(3)
+(DENOMINATION_START, DATE_SELECTION, DENOMINATION_INPUT, DENOMINATION_CONFIRM) = range(4)
 
 # Cash denomination structure based on the image
 DENOMINATIONS = [
@@ -159,13 +159,19 @@ def get_db_connection():
     """Get database connection"""
     return sqlite3.connect('dailydelights.db')
 
-def save_cash_denomination(user_id, username, denominations_data):
+def save_cash_denomination(user_id, username, denominations_data, entry_date=None):
     """Save cash denomination data to database"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        today = date.today()
+        # Use provided date or default to today
+        if entry_date:
+            if isinstance(entry_date, str):
+                entry_date = datetime.strptime(entry_date, "%Y-%m-%d").date()
+        else:
+            entry_date = date.today()
+
         current_time = datetime.now().strftime("%H:%M:%S")
 
         # Calculate totals
@@ -184,8 +190,8 @@ def save_cash_denomination(user_id, username, denominations_data):
                       dollar_5_total + dollar_2_total + dollar_1_total +
                       cent_50_total + cent_20_total + cent_10_total + cent_5_total)
 
-        # Check if entry exists for today
-        cursor.execute("SELECT id FROM cash_denomination_table WHERE entry_date = ?", (today,))
+        # Check if entry exists for the specified date
+        cursor.execute("SELECT id FROM cash_denomination_table WHERE entry_date = ?", (entry_date,))
         existing = cursor.fetchone()
 
         if existing:
@@ -211,7 +217,7 @@ def save_cash_denomination(user_id, username, denominations_data):
                 denominations_data.get('cent_10_qty', 0), denominations_data.get('cent_5_qty', 0),
                 dollar_100_total, dollar_50_total, dollar_10_total, dollar_5_total,
                 dollar_2_total, dollar_1_total, cent_50_total, cent_20_total,
-                cent_10_total, cent_5_total, grand_total, str(user_id), username, today
+                cent_10_total, cent_5_total, grand_total, str(user_id), username, entry_date
             ))
         else:
             # Insert new entry
@@ -226,7 +232,7 @@ def save_cash_denomination(user_id, username, denominations_data):
                     grand_total, telegram_user_id, telegram_username
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                today, current_time,
+                entry_date, current_time,
                 denominations_data.get('dollar_100_qty', 0), denominations_data.get('dollar_50_qty', 0),
                 denominations_data.get('dollar_10_qty', 0), denominations_data.get('dollar_5_qty', 0),
                 denominations_data.get('dollar_2_qty', 0), denominations_data.get('dollar_1_qty', 0),
@@ -446,26 +452,96 @@ async def cash_denomination_start(update: Update, context: ContextTypes.DEFAULT_
     """Start cash denomination entry process"""
     context.user_data['denominations'] = {}
     context.user_data['current_step'] = 0
+    context.user_data['selected_date'] = date.today()  # Default to today
 
     keyboard = [
-        [InlineKeyboardButton("✅ Start Cash Count", callback_data="start_cash_count")],
+        [InlineKeyboardButton("✅ Start Cash Count (Today)", callback_data="start_cash_count")],
+        [InlineKeyboardButton("📅 Change Date", callback_data="change_date")],
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_cash_count")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     today = date.today().strftime("%B %d, %Y")
-    message = f"""
-💰 **Daily Cash Denomination Entry**
+    message = f"""💰 **Daily Cash Denomination Entry**
 
-📅 Date: {today}
+📅 Selected Date: {today} (Today)
 
-This will guide you through entering cash denomination counts for today's daily book closing.
+This will guide you through entering cash denomination counts for daily book closing.
 
-Click 'Start Cash Count' to begin the process.
-    """
+You can start with today's date or change to a different date."""
 
     await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     return DENOMINATION_START
+
+async def handle_date_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle date selection for cash denomination"""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "cancel_cash_count":
+        await query.edit_message_text("❌ Cash denomination entry cancelled.")
+        return ConversationHandler.END
+
+    if query.data == "change_date":
+        # Create date selection keyboard - show last 7 days and next 3 days
+        keyboard = []
+        today = date.today()
+
+        # Add past 7 days
+        for i in range(7, 0, -1):
+            past_date = today - timedelta(days=i)
+            keyboard.append([InlineKeyboardButton(
+                f"📅 {past_date.strftime('%b %d, %Y')} ({i} days ago)",
+                callback_data=f"select_date_{past_date.strftime('%Y-%m-%d')}"
+            )])
+
+        # Add today
+        keyboard.append([InlineKeyboardButton(
+            f"📅 {today.strftime('%b %d, %Y')} (Today)",
+            callback_data=f"select_date_{today.strftime('%Y-%m-%d')}"
+        )])
+
+        # Add next 3 days
+        for i in range(1, 4):
+            future_date = today + timedelta(days=i)
+            keyboard.append([InlineKeyboardButton(
+                f"📅 {future_date.strftime('%b %d, %Y')} (in {i} day{'s' if i > 1 else ''})",
+                callback_data=f"select_date_{future_date.strftime('%Y-%m-%d')}"
+            )])
+
+        keyboard.append([InlineKeyboardButton("✏️ Enter Custom Date", callback_data="custom_date")])
+        keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="back_to_start")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        message = """
+📅 **Select Date for Cash Denomination**
+
+Choose a date from the options below or enter a custom date:
+        """
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        return DATE_SELECTION
+
+    elif query.data.startswith("select_date_"):
+        selected_date_str = query.data.split("select_date_")[1]
+        selected_date = datetime.strptime(selected_date_str, "%Y-%m-%d").date()
+        context.user_data['selected_date'] = selected_date
+
+        # Start cash count directly with first denomination
+        context.user_data['current_step'] = 0
+        return await show_denomination_step(update, context)
+
+    elif query.data == "custom_date":
+        await query.edit_message_text(
+            "📅 Please enter the date in YYYY-MM-DD format (e.g., 2024-01-15):",
+            parse_mode='Markdown'
+        )
+        context.user_data['awaiting_custom_date'] = True
+        return DATE_SELECTION
+
+    elif query.data == "back_to_start":
+        return await cash_denomination_start(update, context)
 
 async def cash_denomination_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle denomination input step by step"""
@@ -476,9 +552,98 @@ async def cash_denomination_input(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text("❌ Cash denomination entry cancelled.")
         return ConversationHandler.END
 
+    if query.data == "change_date":
+        return await handle_date_selection(update, context)
+
     if query.data == "start_cash_count":
+        # Start directly with first denomination
         context.user_data['current_step'] = 0
 
+    return await show_denomination_step(update, context)
+
+async def handle_denomination_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle quantity selection for each denomination"""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "cancel_cash_count":
+        await query.edit_message_text("❌ Cash denomination entry cancelled.")
+        return ConversationHandler.END
+
+    if query.data == "back_step":
+        context.user_data['current_step'] = max(0, context.user_data.get('current_step', 0) - 1)
+        return await show_denomination_step(update, context)
+
+    if query.data.startswith("qty_"):
+        step = context.user_data.get('current_step', 0)
+        denom = DENOMINATIONS[step]
+
+        if query.data == "qty_10plus":
+            # Handle 10+ input via text message
+            await query.edit_message_text(
+                f"Please type the quantity for **{denom['name']}** (must be 10 or more):",
+                parse_mode='Markdown'
+            )
+            context.user_data['awaiting_text_input'] = True
+            context.user_data['current_denomination'] = denom
+            return DENOMINATION_INPUT
+        else:
+            # Direct quantity selection
+            qty = int(query.data.split('_')[1])
+            key = f"{denom['type']}_{int(denom['value']*100) if denom['value'] < 1 else int(denom['value'])}_qty"
+            context.user_data['denominations'][key] = qty
+
+            context.user_data['current_step'] = step + 1
+            return await show_denomination_step(update, context)
+
+    return DENOMINATION_INPUT
+
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text input for quantities 10+ and custom dates"""
+
+    # Check if we're awaiting custom date input
+    if context.user_data.get('awaiting_custom_date'):
+        try:
+            date_str = update.message.text.strip()
+            custom_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            context.user_data['selected_date'] = custom_date
+            context.user_data['awaiting_custom_date'] = False
+
+            # Start cash count directly with first denomination
+            context.user_data['current_step'] = 0
+            return await show_denomination_step(update, context)
+
+        except ValueError:
+            await update.message.reply_text("❌ Invalid date format. Please enter the date in YYYY-MM-DD format (e.g., 2024-01-15):")
+            return DATE_SELECTION
+
+    # Handle denomination quantity input
+    try:
+        qty = int(update.message.text.strip())
+        if qty < 10:
+            await update.message.reply_text("❌ Please enter 10 or more. Use the buttons for quantities below 10.")
+            return DENOMINATION_INPUT
+
+        step = context.user_data.get('current_step', 0)
+        denom = DENOMINATIONS[step]
+
+        # Store the quantity
+        key = f"{denom['type']}_{int(denom['value']*100) if denom['value'] < 1 else int(denom['value'])}_qty"
+        context.user_data['denominations'][key] = qty
+
+        # Move to next step
+        context.user_data['current_step'] = step + 1
+        context.user_data['awaiting_text_input'] = False
+
+        # Continue with next denomination or show summary
+        return await show_denomination_step(update, context)
+
+    except ValueError:
+        await update.message.reply_text("❌ Please enter a valid number (10 or more).")
+        return DENOMINATION_INPUT
+
+async def show_denomination_step(update, context):
+    """Show the current denomination step or summary"""
     step = context.user_data.get('current_step', 0)
 
     if step >= len(DENOMINATIONS):
@@ -503,96 +668,36 @@ async def cash_denomination_input(update: Update, context: ContextTypes.DEFAULT_
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     progress = f"({step + 1}/{len(DENOMINATIONS)})"
-    message = f"""
-💰 **Cash Denomination Entry** {progress}
+
+    # Show selected date in the header
+    selected_date = context.user_data.get('selected_date', date.today())
+    selected_date_formatted = selected_date.strftime("%B %d, %Y")
+    today = date.today()
+
+    if selected_date == today:
+        date_label = f"{selected_date_formatted} (Today)"
+    elif selected_date < today:
+        days_ago = (today - selected_date).days
+        date_label = f"{selected_date_formatted} ({days_ago} day{'s' if days_ago > 1 else ''} ago)"
+    else:
+        days_ahead = (selected_date - today).days
+        date_label = f"{selected_date_formatted} (in {days_ahead} day{'s' if days_ahead > 1 else ''})"
+
+    message = f"""💰 **Cash Denomination Entry** {progress}
+📅 Date: {date_label}
 
 **{denom['name']} (${denom['value']:.2f})**
 
 How many {denom['name']} do you have?
 
-Select quantity or choose "10+" for larger amounts:
-    """
+Select quantity or choose "10+" for larger amounts:"""
 
-    if step == 0:
-        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    if hasattr(update, 'callback_query') and update.callback_query:
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
     else:
-        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
     return DENOMINATION_INPUT
-
-async def handle_denomination_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle quantity selection for each denomination"""
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "cancel_cash_count":
-        await query.edit_message_text("❌ Cash denomination entry cancelled.")
-        return ConversationHandler.END
-
-    if query.data == "back_step":
-        context.user_data['current_step'] = max(0, context.user_data.get('current_step', 0) - 1)
-        return await cash_denomination_input(update, context)
-
-    if query.data.startswith("qty_"):
-        step = context.user_data.get('current_step', 0)
-        denom = DENOMINATIONS[step]
-
-        if query.data == "qty_10plus":
-            # Handle 10+ input via text message
-            await query.edit_message_text(
-                f"Please type the quantity for **{denom['name']}** (must be 10 or more):",
-                parse_mode='Markdown'
-            )
-            context.user_data['awaiting_text_input'] = True
-            context.user_data['current_denomination'] = denom
-            return DENOMINATION_INPUT
-        else:
-            # Direct quantity selection
-            qty = int(query.data.split('_')[1])
-            key = f"{denom['type']}_{int(denom['value']*100) if denom['value'] < 1 else int(denom['value'])}_qty"
-            context.user_data['denominations'][key] = qty
-
-            context.user_data['current_step'] = step + 1
-            return await cash_denomination_input(update, context)
-
-    return DENOMINATION_INPUT
-
-async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text input for quantities 10+"""
-    try:
-        qty = int(update.message.text.strip())
-        if qty < 10:
-            await update.message.reply_text("❌ Please enter 10 or more. Use the buttons for quantities below 10.")
-            return DENOMINATION_INPUT
-
-        step = context.user_data.get('current_step', 0)
-        denom = DENOMINATIONS[step]
-
-        # Store the quantity
-        key = f"{denom['type']}_{int(denom['value']*100) if denom['value'] < 1 else int(denom['value'])}_qty"
-        context.user_data['denominations'][key] = qty
-
-        # Move to next step
-        context.user_data['current_step'] = step + 1
-        context.user_data['awaiting_text_input'] = False
-
-        # Create a fake query object to simulate button press
-        class FakeQuery:
-            def __init__(self):
-                self.data = "continue_flow"
-            async def answer(self):
-                pass
-            async def edit_message_text(self, text, reply_markup=None, parse_mode=None):
-                await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
-
-        fake_update = type('obj', (object,), {'callback_query': FakeQuery()})()
-
-        # Continue with next denomination or show summary
-        return await cash_denomination_input(fake_update, context)
-
-    except ValueError:
-        await update.message.reply_text("❌ Please enter a valid number (10 or more).")
-        return DENOMINATION_INPUT
 
 async def show_denomination_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show summary and confirmation"""
@@ -630,20 +735,32 @@ async def confirm_denomination_save(update: Update, context: ContextTypes.DEFAUL
 
     if query.data == "edit_denominations":
         context.user_data['current_step'] = 0
-        return await cash_denomination_input(update, context)
+        return await show_denomination_step(update, context)
 
     if query.data == "confirm_save":
         user_id = update.effective_user.id
         username = update.effective_user.username or update.effective_user.first_name
         denominations_data = context.user_data.get('denominations', {})
+        selected_date = context.user_data.get('selected_date', date.today())
 
-        success, total = save_cash_denomination(user_id, username, denominations_data)
+        success, total = save_cash_denomination(user_id, username, denominations_data, selected_date)
 
         if success:
-            today = date.today().strftime("%B %d, %Y")
+            selected_date_formatted = selected_date.strftime("%B %d, %Y")
+            today = date.today()
+
+            if selected_date == today:
+                date_label = f"{selected_date_formatted} (Today)"
+            elif selected_date < today:
+                days_ago = (today - selected_date).days
+                date_label = f"{selected_date_formatted} ({days_ago} day{'s' if days_ago > 1 else ''} ago)"
+            else:
+                days_ahead = (selected_date - today).days
+                date_label = f"{selected_date_formatted} (in {days_ahead} day{'s' if days_ahead > 1 else ''})"
+
             await query.edit_message_text(
                 f"✅ **Cash denomination saved successfully!**\n\n"
-                f"📅 Date: {today}\n"
+                f"📅 Date: {date_label}\n"
                 f"💰 Total Amount: ${total:.2f}\n\n"
                 f"Data has been saved to the cash management system.",
                 parse_mode='Markdown'
@@ -712,6 +829,10 @@ def main():
             entry_points=[CommandHandler("cash_denomination", cash_denomination_start)],
             states={
                 DENOMINATION_START: [CallbackQueryHandler(cash_denomination_input)],
+                DATE_SELECTION: [
+                    CallbackQueryHandler(handle_date_selection),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input)
+                ],
                 DENOMINATION_INPUT: [
                     CallbackQueryHandler(handle_denomination_quantity),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input)
