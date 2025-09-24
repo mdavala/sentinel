@@ -185,136 +185,66 @@ class CompleteEmailProcessor:
         except Exception as e:
             return None
     
-    def find_matching_payment(self, payment_data: UOBPaymentData):
-        """Find matching payment in database based on supplier name and amount tolerance"""
+    def find_existing_payment(self, payment_data: UOBPaymentData):
+        """Check if payment with same reference number already exists"""
         if not self.db_path:
-            return []
+            return None
 
-        session = self.SessionLocal()
-        try:
-            # Search for payments with amount within ±2 tolerance
-            min_amount = payment_data.amount - 2.0
-            max_amount = payment_data.amount + 2.0
-
-            # Get all payments within amount range
-            amount_candidates = session.query(PaymentsTable).filter(
-                PaymentsTable.total_amount >= min_amount,
-                PaymentsTable.total_amount <= max_amount
-            ).all()
-
-            if not amount_candidates:
-                return []
-
-            # Fuzzy match supplier names
-            matching_payments = []
-            email_supplier = payment_data.supplier_name.upper().strip()
-
-            for payment in amount_candidates:
-                if not payment.supplier_name:
-                    continue
-
-                db_supplier = payment.supplier_name.upper().strip()
-
-                # Strategy 1: Exact match
-                if email_supplier == db_supplier:
-                    matching_payments.append(payment)
-                    continue
-
-                # Strategy 2: One contains the other
-                if email_supplier in db_supplier or db_supplier in email_supplier:
-                    matching_payments.append(payment)
-                    continue
-
-                # Strategy 3: Remove common business suffixes and compare
-                email_clean = re.sub(r'\s+(PTE\.?\s*LTD\.?|LIMITED|LTD\.?|PTE\.?|PRIVATE)\s*$', '', email_supplier)
-                db_clean = re.sub(r'\s+(PTE\.?\s*LTD\.?|LIMITED|LTD\.?|PTE\.?|PRIVATE)\s*$', '', db_supplier)
-
-                if email_clean == db_clean or email_clean in db_clean or db_clean in email_clean:
-                    matching_payments.append(payment)
-                    continue
-
-                # Strategy 4: Word-by-word matching (at least 70% words match)
-                email_words = set(email_clean.split())
-                db_words = set(db_clean.split())
-
-                if email_words and db_words:
-                    common_words = email_words.intersection(db_words)
-                    match_ratio = len(common_words) / max(len(email_words), len(db_words))
-
-                    if match_ratio >= 0.7:
-                        matching_payments.append(payment)
-
-            return matching_payments
-
-        except Exception as e:
-            return []
-        finally:
-            session.close()
-    
-    def process_payment(self, payment_data: UOBPaymentData):
-        """Process the payment and update database accordingly"""
-        if not self.db_path:
-            return False
-
-        # Use direct SQLite connection for updates
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         try:
-            # Find matching payments
-            session = self.SessionLocal()
-            matching_payments = self.find_matching_payment(payment_data)
-            session.close()
+            cursor.execute(
+                "SELECT id, payment_status FROM payments_table WHERE reference_num = ?",
+                (payment_data.reference_num,)
+            )
+            result = cursor.fetchone()
+            return result
+        except Exception as e:
+            return None
+        finally:
+            conn.close()
+    
+    def process_payment(self, payment_data: UOBPaymentData):
+        """Process the payment and directly insert/update payments table without invoice validation"""
+        if not self.db_path:
+            return False
 
-            if not matching_payments:
-                return False
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
 
-            processed_count = 0
+        try:
+            # Check if payment with same reference number already exists
+            existing_payment = self.find_existing_payment(payment_data)
 
-            # Process each matching payment
-            for payment in matching_payments:
-                # Check if reference number already exists (duplicate check)
-                cursor.execute(
-                    "SELECT id FROM payments_table WHERE reference_num = ? AND id != ?",
-                    (payment_data.reference_num, payment.id)
-                )
-                existing_payment = cursor.fetchone()
-
-                if existing_payment:
-                    # Duplicate reference number found
-                    cursor.execute("""
-                        UPDATE payments_table
-                        SET payment_validity = ?, payment_type = ?, reference_num = ?
-                        WHERE id = ?
-                    """, ("duplicate", payment_data.payment_type, payment_data.reference_num, payment.id))
-
-                elif payment.payment_status and payment.payment_status.lower() == "pending":
-                    # Valid payment - update to paid
-                    cursor.execute("""
-                        UPDATE payments_table
-                        SET payment_status = ?, payment_type = ?, reference_num = ?, payment_validity = ?
-                        WHERE id = ?
-                    """, ("paid", payment_data.payment_type, payment_data.reference_num, "valid", payment.id))
-                    processed_count += 1
-
-                elif payment.payment_status and payment.payment_status.lower() == "paid":
-                    # Already paid - mark as duplicate
-                    cursor.execute("""
-                        UPDATE payments_table
-                        SET payment_validity = ?, payment_type = ?, reference_num = ?
-                        WHERE id = ?
-                    """, ("duplicate", payment_data.payment_type, payment_data.reference_num, payment.id))
-
-                else:
-                    # Unknown status - update payment info
-                    cursor.execute("""
-                        UPDATE payments_table
-                        SET payment_type = ?, reference_num = ?, payment_validity = ?
-                        WHERE id = ?
-                    """, (payment_data.payment_type, payment_data.reference_num, "valid", payment.id))
-
-            conn.commit()
-            return processed_count > 0
+            if existing_payment:
+                # Payment with same reference number exists - mark as duplicate
+                cursor.execute("""
+                    UPDATE payments_table
+                    SET payment_validity = ?, payment_type = ?
+                    WHERE reference_num = ?
+                """, ("duplicate", payment_data.payment_type, payment_data.reference_num))
+                conn.commit()
+                return False  # Don't count duplicates as processed
+            else:
+                # New payment - insert directly into payments table
+                cursor.execute("""
+                    INSERT INTO payments_table
+                    (supplier_name, total_amount, payment_status, payment_type, reference_num, payment_validity,
+                     supplies_received_date, payment_due_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    payment_data.supplier_name,
+                    payment_data.amount,
+                    "paid",  # Set as paid since email confirms payment completion
+                    payment_data.payment_type,
+                    payment_data.reference_num,
+                    "valid",
+                    datetime.now().date(),  # Use current date as received date
+                    None  # No due date for completed payments
+                ))
+                conn.commit()
+                return True
 
         except Exception as e:
             conn.rollback()
