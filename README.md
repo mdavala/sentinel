@@ -450,20 +450,35 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📸 Screenshots
 
 ### Dashboard Overview
-![Dashboard](docs/screenshots/dashboard.png)
-*Real-time overview of store operations with key metrics and alerts*
+![Dashboard Main](docs/screenshots/dashboard1.png)
+*Main dashboard showing key metrics, quick actions, and system overview*
+
+![Dashboard Analytics](docs/screenshots/dashboard2.png)
+*Dashboard analytics section with charts and performance indicators*
 
 ### Inventory Management
 ![Inventory](docs/screenshots/inventory.png)
-*Comprehensive product catalog with stock levels and pricing*
+*Comprehensive product catalog with stock levels, pricing, and search functionality*
 
-### AI Recommendations
-![Recommendations](docs/screenshots/recommendations.png)
-*Smart reorder suggestions based on sales patterns and inventory levels*
+### Invoice Management
+![Invoices](docs/screenshots/invoices.png)
+*Supplier invoice tracking with AI-powered data extraction and payment status*
 
-### Mobile Interface (Telegram Bot)
-![Telegram Bot](docs/screenshots/telegram-bot.png)
-*Easy mobile access for invoice uploads and daily operations*
+### Payment Tracking
+![Payments](docs/screenshots/payments.png)
+*Supplier payment management with due dates and payment history*
+
+### Cash Management
+![Cash Management](docs/screenshots/cashmanagement.png)
+*Daily cash denomination tracking with mobile integration and date filtering*
+
+### Daily Book Closing
+![Daily Book Closing](docs/screenshots/dailybookclosing.png)
+*End-of-day reconciliation with payment method breakdowns and analytics*
+
+### AI Order Recommendations
+![Order Recommendations](docs/screenshots/supplierOrderRecommendations.png)
+*Smart reorder suggestions based on sales patterns and inventory optimization*
 
 ---
 
