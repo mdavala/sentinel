@@ -264,6 +264,14 @@ Open your web browser and navigate to: `http://localhost:5000`
 - **Stock Predictions**: Forecasted inventory needs
 - **Cost Optimization**: Best value ordering strategies
 
+#### 💵 **Cash Management Page**
+- **Daily Cash Records**: Complete denomination-by-denomination cash counts
+- **Date Range Filtering**: View cash records for specific periods
+- **Bills vs Coins Totals**: Separate tracking of paper money and coin totals
+- **Bulk Operations**: Delete individual or multiple cash records
+- **Mobile Integration**: Records created via Telegram bot `/cash_denomination` command
+- **Audit Trail**: Track when records were created and by whom
+
 ## 🔌 API Documentation
 
 ### Authentication
@@ -305,13 +313,45 @@ GET /api/order-recommendations?date={YYYY-MM-DD}
 GET /api/order-recommendations/14-day-schedule?start_date={YYYY-MM-DD}
 ```
 
+#### Cash Management
+```http
+GET /api/cash-denomination
+GET /api/cash-denomination?start_date={YYYY-MM-DD}&end_date={YYYY-MM-DD}
+POST /api/cash-denomination/add
+PUT /api/cash-denomination/edit/{id}
+DELETE /api/cash-denomination/delete/{id}
+POST /api/bulk-delete/cash-denomination
+```
+
 ### Telegram Bot Commands
 ```
 /start - Initialize the bot
 /upload_invoices - Upload supplier invoice photos
 /upload_dailybookclosing - Upload daily sales reports
+/cash_denomination - Record daily cash count by denomination
 /help - Show available commands
 ```
+
+#### Cash Denomination Management 💵
+The `/cash_denomination` command provides a streamlined mobile interface for recording daily cash counts by denomination, essential for end-of-day reconciliation.
+
+**Features:**
+- **Date Selection**: Choose any date (past 7 days, today, next 3 days, or custom date)
+- **Sequential Flow**: Input cash counts in logical order (AUD $100 → $50 → $10 → $5 → $2 → $1 → 50¢ → 20¢ → 10¢ → 5¢)
+- **Real-time Calculations**: Automatic calculation of totals for each denomination
+- **Duplicate Prevention**: Prevents duplicate entries for the same date
+- **Web Dashboard Integration**: View and manage cash denomination records through the Cash Management page
+
+**Usage Workflow:**
+1. Send `/cash_denomination` command to the bot
+2. Select desired date from quick options or enter custom date
+3. Enter quantity for each cash denomination when prompted
+4. Review and confirm the calculated totals
+5. Data is automatically saved and viewable in the web dashboard
+
+**Supported Denominations (Australian Currency):**
+- **Bills**: $100, $50, $10, $5, $2
+- **Coins**: $1, 50¢, 20¢, 10¢, 5¢
 
 ## 🤝 Contributing
 
