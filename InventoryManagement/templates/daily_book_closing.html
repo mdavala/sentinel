@@ -1,0 +1,568 @@
+{% extends "base.html" %}
+
+{% block header %}Daily Book Closing Records{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-book"></i> Daily Book Closing Records</h5>
+        <div class="d-flex gap-2 align-items-center">
+            <a href="{{ url_for('add_daily_book_closing') }}" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus"></i> Add Record
+            </a>
+            <button class="btn btn-warning btn-sm" onclick="showUploadDailyBookModal()" title="Upload daily book closing images from your device">
+                <i class="fas fa-upload"></i> Upload Daily Book Closing
+            </button>
+            <button class="btn btn-success btn-sm" onclick="updateDailyBookClosing()" title="Process daily book closing images from Google Drive">
+                <i class="fas fa-sync-alt"></i> Update Daily Book Closing
+            </button>
+            <button class="btn btn-danger btn-sm" id="bulkDeleteBtn" style="display: none;" onclick="showBulkDeleteModal(bulkDeleteDailyBookClosing)">
+                <i class="fas fa-trash"></i> Delete Selected <span class="badge bg-light text-dark">0</span>
+            </button>
+            <div class="input-group" style="width: 300px;">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search records...">
+                <button class="btn btn-outline-secondary" type="button" id="searchBtn">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="loadingMessage" class="alert alert-info">Loading data...</div>
+        <div id="errorMessage" class="alert alert-danger" style="display: none;"></div>
+        
+        <div class="table-responsive">
+            <table id="dailyBookTable" class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>
+                            <input type="checkbox" id="selectAll" onchange="selectAllRows(this, 'dailyBookTable')">
+                        </th>
+                        <th>ID</th>
+                        <th>Closing Date</th>
+                        <th>Total Sales</th>
+                        <th>Nets Amount</th>
+                        <th>Cash Amount</th>
+                        <th>Nets QR Amount</th>
+                        <th>Credit Amount</th>
+                        <th>Processed At</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Daily Book Closing Modal -->
+<div class="modal fade" id="uploadDailyBookModal" tabindex="-1" aria-labelledby="uploadDailyBookModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="uploadDailyBookModalLabel">
+                    <i class="fas fa-upload"></i> Upload Daily Book Closing Images
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> <strong>Instructions:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>Select one or multiple daily book closing images to upload</li>
+                        <li>Supported formats: JPG, JPEG, PNG</li>
+                        <li>Images will be uploaded to Google Drive daily book closing folder</li>
+                        <li>Use "Update Daily Book Closing" button after upload to process them</li>
+                    </ul>
+                </div>
+
+                <form id="uploadDailyBookForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="dailyBookFiles" class="form-label fw-bold">
+                            <i class="fas fa-images"></i> Select Daily Book Closing Images
+                        </label>
+                        <input type="file" class="form-control" id="dailyBookFiles" name="files"
+                               accept="image/jpeg,image/jpg,image/png" multiple required>
+                        <div class="form-text">You can select multiple files at once (Hold Ctrl/Cmd to select multiple)</div>
+                    </div>
+
+                    <div id="dailyBookFilePreview" class="mb-3" style="display: none;">
+                        <label class="form-label fw-bold">Selected Files:</label>
+                        <div id="dailyBookFileList" class="list-group"></div>
+                    </div>
+
+                    <div id="dailyBookUploadProgress" style="display: none;">
+                        <div class="progress mb-2">
+                            <div id="dailyBookProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                                 role="progressbar" style="width: 0%">0%</div>
+                        </div>
+                        <div id="dailyBookUploadStatus" class="text-center text-muted"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-warning" id="uploadDailyBookBtn" onclick="uploadDailyBookFiles()">
+                    <i class="fas fa-cloud-upload-alt"></i> Upload to Google Drive
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for viewing details -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Daily Book Closing Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalBody">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    console.log('Daily Book Closing page loaded');
+    console.log('jQuery version:', $.fn.jquery);
+    console.log('DataTables available:', typeof $.fn.DataTable !== 'undefined');
+    
+    // Check if DataTables is available
+    if (typeof $.fn.DataTable === 'undefined') {
+        $('#errorMessage').text('DataTables library not loaded. Please refresh the page.').show();
+        $('#loadingMessage').hide();
+        return;
+    }
+    
+    // Initialize DataTable
+    try {
+        let table = $('#dailyBookTable').DataTable({
+            "processing": true,
+            "serverSide": false,
+            "ajax": {
+                "url": "/api/daily-book-closing",
+                "type": "GET",
+                "dataSrc": function(json) {
+                    console.log('DataTable received data:', json);
+                    $('#loadingMessage').hide();
+                    if (json.error) {
+                        $('#errorMessage').text('Error loading data: ' + json.error).show();
+                        return [];
+                    }
+                    return json.data || [];
+                },
+                "error": function(xhr, error, code) {
+                    console.error('DataTable AJAX error:', error, code, xhr.responseText);
+                    $('#loadingMessage').hide();
+                    $('#errorMessage').text('Error loading data: ' + error).show();
+                }
+            },
+            "columns": [
+                {
+                    "data": null,
+                    "orderable": false,
+                    "render": function(data, type, row) {
+                        return `<input type="checkbox" data-row-id="${row.id}" onchange="toggleRowSelection(this, ${row.id})">`;
+                    }
+                },
+                {"data": "id"},
+                {"data": "closing_date"},
+                {
+                    "data": "total_sales",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
+                    }
+                },
+                {
+                    "data": "nets_amount",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
+                    }
+                },
+                {
+                    "data": "cash_amount",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
+                    }
+                },
+                {
+                    "data": "nets_qr_amount",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
+                    }
+                },
+                {
+                    "data": "credit_amount",
+                    "render": function(data) {
+                        return data ? '$' + parseFloat(data).toFixed(2) : 'N/A';
+                    }
+                },
+                {"data": "processed_at"},
+                {
+                    "data": null,
+                    "orderable": false,
+                    "render": function(data, type, row) {
+                        return `
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm btn-primary" onclick="showDetails(${row.id})" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <a href="/daily-book-closing/edit/${row.id}" class="btn btn-sm btn-warning" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <button class="btn btn-sm btn-danger" onclick="deleteRecord(${row.id})" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        `;
+                    }
+                }
+            ],
+            "order": [[ 2, "desc" ]],  // Sort by closing_date column (index 2) descending
+            "pageLength": 25,
+            "language": {
+                "processing": "Loading data...",
+                "emptyTable": "No data available in table"
+            }
+        });
+        
+        // Store table reference globally for search function
+        window.dailyBookTable = table;
+        
+    } catch (error) {
+        console.error('Error initializing DataTable:', error);
+        $('#loadingMessage').hide();
+        $('#errorMessage').text('Error initializing table: ' + error.message).show();
+    }
+
+    // Search functionality
+    $('#searchBtn').click(function() {
+        let searchTerm = $('#searchInput').val();
+        console.log('Searching for:', searchTerm);
+        
+        if (searchTerm && window.dailyBookTable) {
+            $.get('/api/search/daily-book-closing?q=' + encodeURIComponent(searchTerm))
+                .done(function(data) {
+                    console.log('Search results:', data);
+                    window.dailyBookTable.clear();
+                    window.dailyBookTable.rows.add(data.data || []);
+                    window.dailyBookTable.draw();
+                })
+                .fail(function(xhr, status, error) {
+                    console.error('Search error:', error);
+                    alert('Search failed: ' + error);
+                });
+        } else if (window.dailyBookTable) {
+            window.dailyBookTable.ajax.reload();
+        }
+    });
+
+    $('#searchInput').keypress(function(e) {
+        if(e.which == 13) {
+            $('#searchBtn').click();
+        }
+    });
+
+    $('#searchInput').on('input', function() {
+        if($(this).val() === '' && window.dailyBookTable) {
+            window.dailyBookTable.ajax.reload();
+        }
+    });
+});
+
+// Global function for showing details
+function showDetails(recordId) {
+    console.log('Showing details for record ID:', recordId);
+    
+    $.get('/api/daily-book-closing')
+        .done(function(data) {
+            let record = data.data.find(r => r.id === recordId);
+            if (record) {
+                let html = '<div class="row">';
+                for(let key in record) {
+                    if(record[key] !== null && record[key] !== '' && record[key] !== undefined) {
+                        let displayKey = key.replace(/_/g, ' ').toUpperCase();
+                        let displayValue = record[key];
+                        
+                        // Format monetary values
+                        if(key.includes('amount') || key.includes('sales') || key === 'total_settlement') {
+                            if(!isNaN(displayValue)) {
+                                displayValue = '$' + parseFloat(displayValue).toFixed(2);
+                            }
+                        }
+                        
+                        html += '<div class="col-md-6 mb-2"><strong>' + displayKey + ':</strong> ' + displayValue + '</div>';
+                    }
+                }
+                html += '</div>';
+                $('#modalBody').html(html);
+                $('#detailModal').modal('show');
+            } else {
+                alert('Record not found');
+            }
+        })
+        .fail(function(xhr, status, error) {
+            console.error('Error fetching record details:', error);
+            alert('Error loading record details: ' + error);
+        });
+}
+
+// Global function for deleting records
+function deleteRecord(recordId) {
+    showCustomConfirm(
+        'Are you sure you want to delete 1 daily book closing record? This action cannot be undone.',
+        function() {
+            // Create a form and submit it for DELETE request
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/daily-book-closing/delete/${recordId}`;
+            form.style.display = 'none';
+            document.body.appendChild(form);
+            form.submit();
+        }
+    );
+}
+
+// Global function for updating daily book closing from Google Drive
+function updateDailyBookClosing() {
+    showCustomConfirm(
+        'This will process daily book closing images from Google Drive and may take several minutes. Continue?',
+        function() {
+            // Show loading indicator
+            const button = event.target.closest('button');
+            const originalHtml = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            button.disabled = true;
+
+            // Create and submit form
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/daily-book-closing/update';
+            form.style.display = 'none';
+            document.body.appendChild(form);
+            form.submit();
+        }
+    );
+}
+
+// Custom Upload Success Notification
+function showUploadSuccessNotification(title, message, instruction) {
+    // Create notification HTML
+    const notificationHtml = `
+        <div class="alert alert-success alert-dismissible fade show shadow-lg" role="alert"
+             style="position: fixed; top: 80px; right: 20px; z-index: 9999; min-width: 400px; max-width: 500px;">
+            <div class="d-flex align-items-start">
+                <div class="me-3">
+                    <i class="fas fa-check-circle fa-3x text-success"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <h5 class="alert-heading mb-2">
+                        <i class="fas fa-cloud-upload-alt"></i> ${title}
+                    </h5>
+                    <p class="mb-2"><strong>${message}</strong></p>
+                    <hr class="my-2">
+                    <p class="mb-0 small">
+                        <i class="fas fa-info-circle"></i> ${instruction}
+                    </p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        </div>
+    `;
+
+    // Remove any existing notifications
+    document.querySelectorAll('.alert-success[style*="position: fixed"]').forEach(el => el.remove());
+
+    // Add notification to body
+    document.body.insertAdjacentHTML('beforeend', notificationHtml);
+
+    // Auto-dismiss after 8 seconds
+    setTimeout(() => {
+        const notification = document.querySelector('.alert-success[style*="position: fixed"]');
+        if (notification) {
+            notification.classList.remove('show');
+            setTimeout(() => notification.remove(), 150);
+        }
+    }, 8000);
+}
+
+// Upload Daily Book Closing Functions
+function showUploadDailyBookModal() {
+    // Reset form
+    document.getElementById('uploadDailyBookForm').reset();
+    document.getElementById('dailyBookFilePreview').style.display = 'none';
+    document.getElementById('dailyBookUploadProgress').style.display = 'none';
+    document.getElementById('uploadDailyBookBtn').disabled = false;
+
+    // Show modal
+    const uploadModal = new bootstrap.Modal(document.getElementById('uploadDailyBookModal'));
+    uploadModal.show();
+}
+
+// Preview selected files
+document.getElementById('dailyBookFiles').addEventListener('change', function(e) {
+    const files = e.target.files;
+    const fileList = document.getElementById('dailyBookFileList');
+    const filePreview = document.getElementById('dailyBookFilePreview');
+
+    if (files.length > 0) {
+        fileList.innerHTML = '';
+        for (let i = 0; i < files.length; i++) {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+            fileItem.innerHTML = `
+                <span><i class="fas fa-file-image text-primary"></i> ${files[i].name}</span>
+                <span class="badge bg-secondary">${(files[i].size / 1024).toFixed(2)} KB</span>
+            `;
+            fileList.appendChild(fileItem);
+        }
+        filePreview.style.display = 'block';
+    } else {
+        filePreview.style.display = 'none';
+    }
+});
+
+async function uploadDailyBookFiles() {
+    const fileInput = document.getElementById('dailyBookFiles');
+    const files = fileInput.files;
+
+    if (files.length === 0) {
+        showCustomConfirm('Please select at least one file to upload', function() {});
+        return;
+    }
+
+    // Disable upload button
+    const uploadBtn = document.getElementById('uploadDailyBookBtn');
+    uploadBtn.disabled = true;
+    uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+
+    // Show progress
+    const progressDiv = document.getElementById('dailyBookUploadProgress');
+    const progressBar = document.getElementById('dailyBookProgressBar');
+    const statusDiv = document.getElementById('dailyBookUploadStatus');
+    progressDiv.style.display = 'block';
+
+    // Create FormData
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+    }
+
+    try {
+        statusDiv.textContent = `Uploading ${files.length} file(s) to Google Drive...`;
+
+        const response = await fetch('/api/upload-dailybookclosing', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            progressBar.style.width = '100%';
+            progressBar.textContent = '100%';
+            progressBar.classList.remove('progress-bar-animated');
+            progressBar.classList.add('bg-success');
+
+            statusDiv.innerHTML = `<span class="text-success"><i class="fas fa-check-circle"></i> ${result.message}</span>`;
+
+            // Close modal
+            bootstrap.Modal.getInstance(document.getElementById('uploadDailyBookModal')).hide();
+
+            // Show custom success notification with processing status
+            if (result.processing_started) {
+                showUploadSuccessNotification(
+                    'Daily Book Closing Uploaded & Processing Started!',
+                    `Successfully uploaded ${result.uploaded_count} file(s) to Google Drive.`,
+                    'Processing has started automatically. The page will refresh in 30 seconds to show new records.'
+                );
+
+                // Reload the page after 30 seconds to allow processing to complete
+                setTimeout(() => {
+                    location.reload();
+                }, 30000);
+            } else {
+                showUploadSuccessNotification(
+                    'Daily Book Closing Uploaded Successfully!',
+                    `Successfully uploaded ${result.uploaded_count} file(s) to Google Drive.`,
+                    result.processing_error ?
+                        `Processing could not start automatically: ${result.processing_error}. Click "Update Daily Book Closing" to process manually.` :
+                        'Click "Update Daily Book Closing" button to process them.'
+                );
+            }
+        } else {
+            throw new Error(result.error || 'Upload failed');
+        }
+    } catch (error) {
+        console.error('Upload error:', error);
+        progressBar.classList.remove('progress-bar-animated');
+        progressBar.classList.add('bg-danger');
+        statusDiv.innerHTML = `<span class="text-danger"><i class="fas fa-exclamation-circle"></i> Error: ${error.message}</span>`;
+
+        // Re-enable button
+        uploadBtn.disabled = false;
+        uploadBtn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Upload to Google Drive';
+    }
+}
+
+// Bulk delete function for daily book closing
+function bulkDeleteDailyBookClosing(selectedIds) {
+    if (selectedIds.length === 0) return;
+
+    // Show loading message
+    const loadingAlert = $('<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Deleting selected records...</div>');
+    $('.card-body').prepend(loadingAlert);
+
+    // Use AJAX to call the bulk delete endpoint
+    $.ajax({
+        url: '/api/bulk-delete/daily-book-closing',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ids: selectedIds}),
+        success: function(response) {
+            loadingAlert.remove();
+            if (response.success) {
+                // Show success message
+                const successAlert = $(`<div class="alert alert-success alert-dismissible fade show">
+                    <i class="fas fa-check"></i> Successfully deleted ${response.deleted_count} daily book closing records!
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`);
+                $('.card-body').prepend(successAlert);
+
+                // Reload table data
+                if (window.dailyBookTable) {
+                    window.dailyBookTable.ajax.reload();
+                }
+
+                // Auto-remove alert after 5 seconds
+                setTimeout(() => successAlert.alert('close'), 5000);
+            } else {
+                // Show error message
+                const errorAlert = $(`<div class="alert alert-danger alert-dismissible fade show">
+                    <i class="fas fa-exclamation-triangle"></i> Error: ${response.error}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>`);
+                $('.card-body').prepend(errorAlert);
+            }
+        },
+        error: function(xhr, status, error) {
+            loadingAlert.remove();
+            console.error('Bulk delete error:', error);
+            const errorAlert = $(`<div class="alert alert-danger alert-dismissible fade show">
+                <i class="fas fa-exclamation-triangle"></i> Error deleting records: ${error}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`);
+            $('.card-body').prepend(errorAlert);
+        }
+    });
+}
+</script>
+{% endblock %}

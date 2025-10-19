@@ -1,0 +1,75 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Environment variables and credentials
+.env
+.env.local
+*.json
+!package.json
+!package-lock.json
+credentials*.json
+token*.json
+dd_service_account.json
+
+# AWS Credentials
+AWS_Credentials_DD/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Process IDs
+*.pid
+
+# Build artifacts
+*.tar.gz
+*.zip
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.dd/
+
+# Sensitive business data directories
+InventoryManagement/Invoices/
+InventoryManagement/product_inventory/
+InventoryManagement/dd_transactionDetails/
+InventoryManagement/zohoForms/
+InventoryManagement/Suppliers Contact/
+InventoryManagement/gdrive_invoices/
+Product_Inventory_Backup_Original/
+
+# Backup files
+*.bak
+*.backup
+
+# SSH keys
+*.pem
+ubuntu@*
+
+# Excel files with potentially sensitive data
+product_price_revision.xlsx
+product_prices_revised.csv
+product_prices_revised.xlsx

@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  flask-app:
+    build: .
+    container_name: dailydelights-flask
+    ports:
+      - "5005:5005"
+    volumes:
+      # Mount database to persist data
+      - ./dailydelights.db:/app/dailydelights.db
+      # Mount Google Drive credentials
+      - ./credentials.json:/app/credentials.json
+      - ./token.json:/app/token.json
+      - ./credentials_sg_daily_delights_email.json:/app/credentials_sg_daily_delights_email.json
+      - ./token_sg_daily_delights_email.json:/app/token_sg_daily_delights_email.json
+      - ./dd_service_account.json:/app/dd_service_account.json
+      # Mount logs directory
+      - ./logs:/app/logs
+      # Mount local invoice storage
+      - ./gdrive_invoices:/app/gdrive_invoices
+      # Mount environment file
+      - ./.env:/app/.env
+      # Mount application code for development (so you don't need to rebuild for code changes)
+      - ./app.py:/app/app.py
+      - ./templates:/app/templates
+      - ./static:/app/static
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    name: dailydelights-network

@@ -1,0 +1,444 @@
+{% extends "base.html" %}
+
+{% block title %}Price Changes - DailyDelights{% endblock %}
+
+{% block header %}Price Changes{% endblock %}
+
+{% block content %}
+<style>
+    .stats-card {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 15px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .stats-number {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin: 0;
+    }
+    .stats-label {
+        font-size: 1rem;
+        opacity: 0.9;
+    }
+    .filter-section {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    .price-table {
+        width: 100%;
+        margin-top: 20px;
+    }
+    .price-table th {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-weight: 600;
+        padding: 15px;
+        text-align: left;
+    }
+    .price-table td {
+        padding: 15px;
+        vertical-align: middle;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    .price-table tr:hover {
+        background-color: #f8f9fa;
+    }
+    .badge-hike {
+        padding: 8px 15px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 0.9rem;
+    }
+    .hike-critical {
+        background: #ff4757;
+        color: white;
+    }
+    .hike-high {
+        background: #ffa502;
+        color: white;
+    }
+    .hike-medium {
+        background: #ffb142;
+        color: white;
+    }
+    .hike-low {
+        background: #ffd32a;
+        color: #333;
+    }
+    .price-diff {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .price-old {
+        text-decoration: line-through;
+        color: #95a5a6;
+        font-size: 0.9rem;
+    }
+    .price-new {
+        color: #e74c3c;
+        font-weight: bold;
+        font-size: 1.1rem;
+    }
+    .action-buttons {
+        display: flex;
+        gap: 10px;
+    }
+    .no-data {
+        text-align: center;
+        padding: 60px 20px;
+        color: #95a5a6;
+    }
+    .no-data i {
+        font-size: 4rem;
+        margin-bottom: 20px;
+    }
+</style>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-chart-line"></i> Price Changes</h5>
+        <p class="text-muted mb-0 small">Items with more than 10% price hikes from suppliers</p>
+    </div>
+    <div class="card-body">
+        <!-- Statistics -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="stats-card">
+                    <p class="stats-number" id="totalChanges">0</p>
+                    <p class="stats-label">Total Price Changes</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    <p class="stats-number" id="unreviewedChanges">0</p>
+                    <p class="stats-label">Unreviewed Changes</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                    <p class="stats-number" id="avgHike">0%</p>
+                    <p class="stats-label">Average Price Hike</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-section">
+            <div class="row align-items-center">
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">Filter by Status:</label>
+                    <select class="form-select" id="reviewedFilter">
+                        <option value="">All Items</option>
+                        <option value="false" selected>Unreviewed Only</option>
+                        <option value="true">Reviewed Only</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">Search:</label>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Search by item name or supplier...">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">&nbsp;</label>
+                    <button class="btn btn-primary w-100" onclick="loadPriceChanges()">
+                        <i class="fas fa-sync-alt"></i> Reload
+                    </button>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">&nbsp;</label>
+                    <button class="btn btn-success w-100" onclick="refreshPriceChanges()">
+                        <i class="fas fa-database"></i> Refresh from Invoice
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Price Changes Table -->
+        <div class="table-responsive">
+            <table class="price-table table">
+                <thead>
+                    <tr>
+                        <th>Item Name</th>
+                        <th>Supplier</th>
+                        <th>Price Comparison</th>
+                        <th>Difference</th>
+                        <th>Hike %</th>
+                        <th>Detected</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="priceChangesTableBody">
+                    <tr>
+                        <td colspan="7" class="no-data">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Loading price changes...</p>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    let allPriceChanges = [];
+
+    // Load price changes on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadPriceChanges();
+
+        // Add event listeners
+        document.getElementById('reviewedFilter').addEventListener('change', filterAndDisplay);
+        document.getElementById('searchInput').addEventListener('input', filterAndDisplay);
+    });
+
+    function loadPriceChanges() {
+        const reviewedFilter = document.getElementById('reviewedFilter').value;
+        let url = '/api/price-changes';
+        if (reviewedFilter !== '') {
+            url += `?reviewed=${reviewedFilter}`;
+        }
+
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    allPriceChanges = data.price_changes;
+                    updateStats();
+                    filterAndDisplay();
+                } else {
+                    showError('Failed to load price changes');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showError('Error loading price changes');
+            });
+    }
+
+    function filterAndDisplay() {
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+        let filtered = allPriceChanges.filter(change => {
+            const matchesSearch = change.item_name.toLowerCase().includes(searchTerm) ||
+                                change.supplier.toLowerCase().includes(searchTerm);
+            return matchesSearch;
+        });
+
+        displayPriceChanges(filtered);
+    }
+
+    function updateStats() {
+        const total = allPriceChanges.length;
+        const unreviewed = allPriceChanges.filter(c => !c.reviewed).length;
+        const avgHike = total > 0
+            ? (allPriceChanges.reduce((sum, c) => sum + c.percentage_hike, 0) / total).toFixed(1)
+            : 0;
+
+        document.getElementById('totalChanges').textContent = total;
+        document.getElementById('unreviewedChanges').textContent = unreviewed;
+        document.getElementById('avgHike').textContent = avgHike + '%';
+    }
+
+    function displayPriceChanges(priceChanges) {
+        const tbody = document.getElementById('priceChangesTableBody');
+
+        if (priceChanges.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="no-data">
+                        <i class="fas fa-inbox"></i>
+                        <p>No price changes found</p>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = priceChanges.map(change => {
+            const hikeClass = getHikeClass(change.percentage_hike);
+            const reviewedBadge = change.reviewed
+                ? '<span class="badge bg-success">Reviewed</span>'
+                : '<span class="badge bg-warning text-dark">Pending</span>';
+
+            return `
+                <tr>
+                    <td>
+                        <strong>${change.item_name}</strong>
+                        <br>
+                        ${reviewedBadge}
+                    </td>
+                    <td>${change.supplier}</td>
+                    <td>
+                        <div class="price-diff">
+                            <span class="price-old">$${change.inventory_price.toFixed(2)}</span>
+                            <i class="fas fa-arrow-right"></i>
+                            <span class="price-new">$${change.invoice_price.toFixed(2)}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="text-danger fw-bold">+$${change.price_difference.toFixed(2)}</span>
+                    </td>
+                    <td>
+                        <span class="badge-hike ${hikeClass}">
+                            +${change.percentage_hike.toFixed(1)}%
+                        </span>
+                    </td>
+                    <td>
+                        <small class="text-muted">${change.detected_at}</small>
+                    </td>
+                    <td>
+                        <div class="action-buttons">
+                            ${!change.reviewed ? `
+                                <button class="btn btn-sm btn-success" onclick="markReviewed(${change.id})">
+                                    <i class="fas fa-check"></i> Review
+                                </button>
+                            ` : ''}
+                            <button class="btn btn-sm btn-danger" onclick="deleteChange(${change.id})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function getHikeClass(percentage) {
+        if (percentage >= 1000) return 'hike-critical';
+        if (percentage >= 500) return 'hike-high';
+        if (percentage >= 100) return 'hike-medium';
+        return 'hike-low';
+    }
+
+    function markReviewed(changeId) {
+        showCustomConfirm('Mark this price change as reviewed?', function() {
+            fetch(`/api/price-changes/${changeId}/review`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    loadPriceChanges();
+                    showNotification('Marked as reviewed', 'success');
+                } else {
+                    showNotification(data.error || 'Failed to update', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('Error updating price change', 'danger');
+            });
+        });
+    }
+
+    function deleteChange(changeId) {
+        showCustomConfirm('Delete this price change record?', function() {
+            fetch(`/api/price-changes/${changeId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    loadPriceChanges();
+                    showNotification('Deleted successfully', 'success');
+                } else {
+                    showNotification(data.error || 'Failed to delete', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('Error deleting price change', 'danger');
+            });
+        });
+    }
+
+    function refreshPriceChanges() {
+        showCustomConfirm('This will refresh price changes by comparing invoice_table with product_inventory_table. Continue?', function() {
+            // Show loading state
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+
+            fetch('/api/price-changes/refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+
+                if (data.success) {
+                    showNotification(`Price changes refreshed! Detected ${data.price_changes_detected} price increase(s)`, 'success');
+                    loadPriceChanges();  // Reload the table
+                } else {
+                    showNotification(data.error || 'Failed to refresh price changes', 'danger');
+                }
+            })
+            .catch(error => {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+                console.error('Error:', error);
+                showNotification('Error refreshing price changes', 'danger');
+            });
+        });
+    }
+
+    function showNotification(message, type = 'info') {
+        const notificationHtml = `
+            <div class="alert alert-${type} alert-dismissible fade show shadow-lg"
+                 style="position: fixed; top: 80px; right: 20px; z-index: 9999; min-width: 300px;">
+                <div class="d-flex align-items-start">
+                    <div class="me-3">
+                        <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'danger' ? 'fa-exclamation-circle' : 'fa-info-circle'} fa-2x"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <strong>${message}</strong>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', notificationHtml);
+
+        // Auto dismiss after 5 seconds
+        setTimeout(() => {
+            const alerts = document.querySelectorAll('.alert');
+            if (alerts.length > 0) {
+                alerts[alerts.length - 1].remove();
+            }
+        }, 5000);
+    }
+
+    function showCustomConfirm(message, onConfirm) {
+        const modal = new bootstrap.Modal(document.getElementById('customConfirmModal'));
+        document.getElementById('customConfirmMessage').textContent = message;
+
+        const yesBtn = document.getElementById('customConfirmYes');
+        const newYesBtn = yesBtn.cloneNode(true);
+        yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
+
+        newYesBtn.addEventListener('click', function() {
+            modal.hide();
+            onConfirm();
+        });
+
+        modal.show();
+    }
+</script>
+{% endblock %}

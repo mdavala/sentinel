@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block header %}Edit Invoice Record{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-edit"></i> Edit Invoice Record #{{ record.id }}</h5>
+                <a href="{{ url_for('invoices') }}" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-arrow-left"></i> Back to List
+                </a>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="invoice_number" class="form-label">Invoice Number</label>
+                                <input type="text" class="form-control" id="invoice_number" name="invoice_number" value="{{ record.invoice_number or '' }}">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="invoice_date" class="form-label">Invoice Date</label>
+                                <input type="date" class="form-control" id="invoice_date" name="invoice_date" value="{{ record.invoice_date or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="supplier_name" class="form-label">Supplier Name</label>
+                                <input type="text" class="form-control" id="supplier_name" name="supplier_name" value="{{ record.supplier_name or '' }}">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="item_name" class="form-label">Item Name</label>
+                                <input type="text" class="form-control" id="item_name" name="item_name" value="{{ record.item_name or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="quantity" class="form-label">Quantity</label>
+                                <input type="number" class="form-control" id="quantity" name="quantity" value="{{ record.quantity or '' }}">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="unit_price" class="form-label">Unit Price</label>
+                                <input type="number" step="0.01" class="form-control" id="unit_price" name="unit_price" value="{{ record.unit_price or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="carton_or_loose" class="form-label">Carton or Loose</label>
+                                <select class="form-select" id="carton_or_loose" name="carton_or_loose">
+                                    <option value="">Select type</option>
+                                    <option value="carton" {{ 'selected' if record.carton_or_loose == 'carton' else '' }}>Carton</option>
+                                    <option value="loose" {{ 'selected' if record.carton_or_loose == 'loose' else '' }}>Loose</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="items_per_carton" class="form-label">Items per Carton</label>
+                                <input type="number" class="form-control" id="items_per_carton" name="items_per_carton" value="{{ record.items_per_carton or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="unit_price_item" class="form-label">Unit Price per Item</label>
+                                <input type="number" step="0.01" class="form-control" id="unit_price_item" name="unit_price_item" value="{{ record.unit_price_item or '' }}">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="amount_per_item" class="form-label">Amount per Item</label>
+                                <input type="number" step="0.01" class="form-control" id="amount_per_item" name="amount_per_item" value="{{ record.amount_per_item or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="gst_amount" class="form-label">GST Amount</label>
+                                <input type="number" step="0.01" class="form-control" id="gst_amount" name="gst_amount" value="{{ record.gst_amount or '' }}">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="total_amount_per_item" class="form-label">Total Amount per Item</label>
+                                <input type="number" step="0.01" class="form-control" id="total_amount_per_item" name="total_amount_per_item" value="{{ record.total_amount_per_item or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="total_amount" class="form-label">Total Amount</label>
+                                <input type="number" step="0.01" class="form-control" id="total_amount" name="total_amount" value="{{ record.total_amount or '' }}">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="barcode" class="form-label">Barcode</label>
+                                <input type="text" class="form-control" id="barcode" name="barcode" value="{{ record.barcode or '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{{ url_for('invoices') }}" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                        <button type="submit" class="btn btn-info">
+                            <i class="fas fa-save"></i> Update Invoice
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

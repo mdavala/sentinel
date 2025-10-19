@@ -1,0 +1,506 @@
+{% extends "base.html" %}
+
+{% block title %}Monthly Order Plan{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>
+                    <i class="fas fa-calendar-alt"></i> Monthly Order Planning
+                </h2>
+                <div>
+                    <input type="month" class="form-control d-inline-block" id="targetMonth" style="width: auto; margin-right: 10px;">
+                    <button class="btn btn-primary" id="generateRecommendationsBtn">
+                        <i class="fas fa-sync-alt"></i> Generate Monthly Plan
+                    </button>
+                </div>
+            </div>
+
+            <!-- Monthly Summary Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Monthly Overview</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row" id="monthlySummary">
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 id="totalOrders" class="text-primary">0</h4>
+                                <small class="text-muted">Total Orders</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 id="totalValue" class="text-success">$0.00</h4>
+                                <small class="text-muted">Total Order Value</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 id="totalSuppliers" class="text-info">0</h4>
+                                <small class="text-muted">Suppliers</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h4 id="totalWeeks" class="text-warning">0</h4>
+                                <small class="text-muted">Weeks</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Week Tabs -->
+            <ul class="nav nav-tabs mb-3" id="weekTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="all-weeks-tab" data-bs-toggle="tab" data-bs-target="#all-weeks" type="button">
+                        All Weeks
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Week Content -->
+            <div class="tab-content" id="weekTabContent">
+                <div class="tab-pane fade show active" id="all-weeks" role="tabpanel">
+                    <!-- Filter Section -->
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <label for="supplierFilter" class="form-label">Supplier</label>
+                                    <select class="form-select" id="supplierFilter">
+                                        <option value="all">All Suppliers</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="statusFilter" class="form-label">Status</label>
+                                    <select class="form-select" id="statusFilter">
+                                        <option value="all">All Status</option>
+                                        <option value="pending">Pending</option>
+                                        <option value="ordered">Ordered</option>
+                                        <option value="delivered">Delivered</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button class="btn btn-secondary w-100" id="applyFiltersBtn">
+                                        <i class="fas fa-filter"></i> Apply Filters
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recommendations Table -->
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="fas fa-list"></i> Order Recommendations</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="weeklyOrders">
+                                <!-- Weekly orders will be inserted here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="mt-4">
+                <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Order</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Supplier: <span id="editSupplierName"></span></h6>
+                <h6>Week: <span id="editWeekLabel"></span></h6>
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Category</th>
+                                <th>Qty</th>
+                                <th>Cost</th>
+                                <th>Subtotal</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="editItemsBody"></tbody>
+                    </table>
+                </div>
+                <h6>Total: SGD <span id="editTotalAmount">0.00</span></h6>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveEditBtn">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .week-section {
+        margin-bottom: 30px;
+        border-left: 4px solid #0d6efd;
+        padding-left: 20px;
+    }
+    .week-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+    }
+    .order-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        transition: all 0.3s;
+    }
+    .order-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    .status-badge {
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-size: 0.85em;
+    }
+    .status-pending { background: #ffc107; color: #000; }
+    .status-ordered { background: #0dcaf0; color: #000; }
+    .status-delivered { background: #198754; color: #fff; }
+</style>
+
+<script>
+let allRecommendations = [];
+let currentEditId = null;
+let currentEditItems = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Set default month to next month
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    const monthString = nextMonth.toISOString().slice(0, 7);
+    document.getElementById('targetMonth').value = monthString;
+
+    loadSuppliers();
+    loadRecommendations();
+});
+
+function loadSuppliers() {
+    fetch('/api/order-recommendations/suppliers')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const filter = document.getElementById('supplierFilter');
+                data.suppliers.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s;
+                    opt.textContent = s;
+                    filter.appendChild(opt);
+                });
+            }
+        });
+}
+
+function loadRecommendations() {
+    const supplier = document.getElementById('supplierFilter').value;
+    const status = document.getElementById('statusFilter').value;
+
+    const params = new URLSearchParams();
+    if (supplier !== 'all') params.append('supplier', supplier);
+    if (status !== 'all') params.append('status', status);
+
+    fetch(`/api/order-recommendations?${params}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                allRecommendations = data.recommendations;
+                renderWeeklyView();
+                updateSummary();
+            }
+        });
+}
+
+function renderWeeklyView() {
+    const container = document.getElementById('weeklyOrders');
+    container.innerHTML = '';
+
+    if (allRecommendations.length === 0) {
+        container.innerHTML = `
+            <div class="alert alert-info text-center">
+                <i class="fas fa-info-circle"></i> No recommendations found.
+                Select a month and click "Generate Monthly Plan" to create order recommendations.
+            </div>
+        `;
+        return;
+    }
+
+    // Group by week
+    const byWeek = {};
+    allRecommendations.forEach(rec => {
+        const weekLabel = rec.notes.split(' - ')[0] || rec.recommended_date;
+        if (!byWeek[weekLabel]) byWeek[weekLabel] = [];
+        byWeek[weekLabel].push(rec);
+    });
+
+    // Render each week
+    Object.keys(byWeek).sort().forEach(weekLabel => {
+        const weekOrders = byWeek[weekLabel];
+        const weekTotal = weekOrders.reduce((sum, r) => sum + r.total_amount_sgd, 0);
+
+        const weekSection = document.createElement('div');
+        weekSection.className = 'week-section';
+        weekSection.innerHTML = `
+            <div class="week-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0">${weekLabel}</h5>
+                        <small>${weekOrders.length} orders</small>
+                    </div>
+                    <div>
+                        <h4 class="mb-0">SGD ${weekTotal.toFixed(2)}</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="week-orders" id="week-${weekLabel.replace(/\s/g, '-')}"></div>
+        `;
+        container.appendChild(weekSection);
+
+        const ordersContainer = weekSection.querySelector('.week-orders');
+        weekOrders.forEach(order => {
+            const card = document.createElement('div');
+            card.className = 'order-card';
+            card.innerHTML = `
+                <div class="row align-items-center">
+                    <div class="col-md-3">
+                        <strong>${order.supplier_name}</strong>
+                    </div>
+                    <div class="col-md-2">
+                        <span class="badge bg-info">${order.items_count} items</span>
+                    </div>
+                    <div class="col-md-2">
+                        <strong>SGD ${order.total_amount_sgd.toFixed(2)}</strong>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select form-select-sm status-select" onchange="updateStatus(${order.id}, this.value)">
+                            <option value="pending" ${order.status === 'pending' ? 'selected' : ''}>Pending</option>
+                            <option value="ordered" ${order.status === 'ordered' ? 'selected' : ''}>Ordered</option>
+                            <option value="delivered" ${order.status === 'delivered' ? 'selected' : ''}>Delivered</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 text-end">
+                        <button class="btn btn-sm btn-info" onclick="viewItems(${order.id})">
+                            <i class="fas fa-eye"></i> View
+                        </button>
+                        <button class="btn btn-sm btn-warning" onclick="editOrder(${order.id})">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteOrder(${order.id})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="collapse" id="items-${order.id}" style="margin-top: 15px;">
+                    <table class="table table-sm table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Category</th>
+                                <th>Qty</th>
+                                <th>Cost</th>
+                                <th>Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${order.items.map(item => `
+                                <tr>
+                                    <td>${item.item_name}</td>
+                                    <td>${item.category}</td>
+                                    <td>${item.order_unit === 'carton' ? `${item.cartons} ctn (${item.total_items} pcs)` : `${item.quantity} pcs`}</td>
+                                    <td>$${item.unit_cost.toFixed(2)}</td>
+                                    <td>$${item.subtotal.toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            ordersContainer.appendChild(card);
+        });
+    });
+}
+
+function viewItems(orderId) {
+    const collapse = new bootstrap.Collapse(document.getElementById(`items-${orderId}`));
+}
+
+function updateSummary() {
+    const totalOrders = allRecommendations.length;
+    const totalValue = allRecommendations.reduce((sum, r) => sum + r.total_amount_sgd, 0);
+    const suppliers = new Set(allRecommendations.map(r => r.supplier_name));
+    const weeks = new Set(allRecommendations.map(r => r.notes.split(' - ')[0]));
+
+    document.getElementById('totalOrders').textContent = totalOrders;
+    document.getElementById('totalValue').textContent = `$${totalValue.toFixed(2)}`;
+    document.getElementById('totalSuppliers').textContent = suppliers.size;
+    document.getElementById('totalWeeks').textContent = weeks.size;
+}
+
+function updateStatus(orderId, newStatus) {
+    if (!confirm(`Change status to "${newStatus}"?`)) {
+        loadRecommendations();
+        return;
+    }
+
+    fetch(`/api/order-recommendations/${orderId}/status`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: newStatus})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert('Status updated');
+            loadRecommendations();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    });
+}
+
+function editOrder(orderId) {
+    const order = allRecommendations.find(r => r.id === orderId);
+    if (!order) return;
+
+    currentEditId = orderId;
+    currentEditItems = JSON.parse(JSON.stringify(order.items));
+
+    document.getElementById('editSupplierName').textContent = order.supplier_name;
+    document.getElementById('editWeekLabel').textContent = order.notes.split(' - ')[0];
+    renderEditItems();
+
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+function renderEditItems() {
+    const tbody = document.getElementById('editItemsBody');
+    tbody.innerHTML = '';
+
+    let total = 0;
+    currentEditItems.forEach((item, idx) => {
+        const row = `
+            <tr>
+                <td>${item.item_name}</td>
+                <td>${item.category}</td>
+                <td><input type="number" class="form-control form-control-sm" value="${item.quantity}" min="1" onchange="updateQty(${idx}, this.value)"></td>
+                <td>$${item.unit_cost.toFixed(2)}</td>
+                <td>$${item.subtotal.toFixed(2)}</td>
+                <td><button class="btn btn-sm btn-danger" onclick="removeItem(${idx})"><i class="fas fa-times"></i></button></td>
+            </tr>
+        `;
+        tbody.innerHTML += row;
+        total += item.subtotal;
+    });
+
+    document.getElementById('editTotalAmount').textContent = total.toFixed(2);
+}
+
+function updateQty(idx, newQty) {
+    newQty = parseInt(newQty) || 1;
+    currentEditItems[idx].quantity = newQty;
+    currentEditItems[idx].subtotal = newQty * currentEditItems[idx].unit_cost;
+    renderEditItems();
+}
+
+function removeItem(idx) {
+    if (currentEditItems.length === 1) {
+        alert('Cannot remove last item');
+        return;
+    }
+    currentEditItems.splice(idx, 1);
+    renderEditItems();
+}
+
+document.getElementById('saveEditBtn').addEventListener('click', function() {
+    fetch(`/api/order-recommendations/${currentEditId}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({items: currentEditItems})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert('Updated successfully');
+            bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+            loadRecommendations();
+        }
+    });
+});
+
+function deleteOrder(orderId) {
+    if (!confirm('Delete this order?')) return;
+
+    fetch(`/api/order-recommendations/${orderId}`, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('Deleted');
+                loadRecommendations();
+            }
+        });
+}
+
+document.getElementById('generateRecommendationsBtn').addEventListener('click', function() {
+    const targetMonth = document.getElementById('targetMonth').value;
+    if (!targetMonth) {
+        alert('Please select a month');
+        return;
+    }
+
+    if (!confirm(`Generate monthly plan for ${targetMonth}? This will clear pending recommendations.`)) return;
+
+    const btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+
+    fetch('/api/order-recommendations/generate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({target_month: targetMonth})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            loadRecommendations();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sync-alt"></i> Generate Monthly Plan';
+    });
+});
+
+document.getElementById('applyFiltersBtn').addEventListener('click', loadRecommendations);
+</script>
+
+{% endblock %}

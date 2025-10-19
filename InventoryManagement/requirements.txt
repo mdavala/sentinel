@@ -1,0 +1,81 @@
+# Flask Web Framework
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+gunicorn==21.2.0
+
+# Database
+SQLAlchemy==2.0.21
+
+# Data Processing & Analysis
+pandas==2.1.1
+numpy==1.25.2
+
+# Google APIs & Authentication
+google-auth==2.23.3
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+google-api-python-client==2.103.0
+
+# Telegram Bot
+python-telegram-bot==20.6
+
+# Data Validation
+pydantic==2.4.2
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Image Processing
+Pillow==10.0.1
+
+# String Matching & Fuzzy Search
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.21.1
+
+# HTTP Requests
+requests==2.31.0
+
+# Time and Date Utilities
+python-dateutil==2.8.2
+
+# Type Annotations (for older Python versions)
+typing-extensions==4.8.0
+
+# Excel file handling (if needed)
+openpyxl==3.1.2
+
+# CSV processing
+chardet==5.2.0
+
+# Regular expressions (already included in Python standard library)
+# re - built-in
+
+# JSON handling (already included in Python standard library)
+# json - built-in
+
+# SQLite (already included in Python standard library)
+# sqlite3 - built-in
+
+# Base64 encoding (already included in Python standard library)
+# base64 - built-in
+
+# OS operations (already included in Python standard library)
+# os - built-in
+
+# Temporary files (already included in Python standard library)
+# tempfile - built-in
+
+# Logging (already included in Python standard library)
+# logging - built-in
+
+# Asyncio (already included in Python 3.7+)
+# asyncio - built-in
+
+# Collections (already included in Python standard library)
+# collections - built-in
+
+# Datetime (already included in Python standard library)
+# datetime - built-in
+
+# Functools (already included in Python standard library)
+# functools - built-in

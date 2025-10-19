@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">${{ "%.2f"|format(analytics.summary.total_revenue) }}</h4>
+                        <p class="card-text">Total Revenue</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-chart-line fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">{{ analytics.counts.daily_book_count }}</h4>
+                        <p class="card-text">Daily Book Closing Records</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-book fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">{{ analytics.counts.invoice_count }}</h4>
+                        <p class="card-text">Total Invoices</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-file-invoice fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">${{ "%.2f"|format(analytics.summary.total_outstanding) }}</h4>
+                        <p class="card-text">Outstanding</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-exclamation-triangle fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row mb-4">
+    <!-- Daily Sales Chart -->
+    <div class="col-md-8 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-area"></i> Daily Sales Trend (Last 30 Days)</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="dailySalesChart" height="120"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Payment Methods Chart -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-pie"></i> Payment Methods</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="paymentMethodsChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tables Row -->
+<div class="row mb-4">
+    <!-- Top Suppliers Table -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-users"></i> Top Suppliers</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-sm" id="suppliersTable">
+                        <thead>
+                            <tr>
+                                <th>Supplier</th>
+                                <th>Amount</th>
+                                <th>Invoices</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for supplier in analytics.top_suppliers %}
+                            <tr>
+                                <td>{{ supplier.name[:30] }}{% if supplier.name|length > 30 %}...{% endif %}</td>
+                                <td>${{ "%.2f"|format(supplier.amount) }}</td>
+                                <td>{{ supplier.count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Top Items Table -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-boxes"></i> Top Items</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-sm" id="itemsTable">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Quantity</th>
+                                <th>Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in analytics.top_items %}
+                            <tr>
+                                <td>{{ item.name[:25] }}{% if item.name|length > 25 %}...{% endif %}</td>
+                                <td>{{ item.quantity }}</td>
+                                <td>${{ "%.2f"|format(item.amount) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Monthly Revenue and Unpaid Invoices -->
+<div class="row mb-4">
+    <!-- Monthly Revenue Chart -->
+    <div class="col-md-7 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-bar"></i> Monthly Revenue Trend</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="monthlyRevenueChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Unpaid Invoices -->
+    <div class="col-md-5 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-clock"></i> Unpaid Invoices</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-striped table-sm">
+                        <thead>
+                            <tr>
+                                <th>Invoice</th>
+                                <th>Supplier</th>
+                                <th>Amount</th>
+                                <th>Due Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for invoice in analytics.unpaid_invoices %}
+                            <tr>
+                                <td>{{ invoice.invoice_number }}</td>
+                                <td>{{ invoice.supplier_name[:15] }}{% if invoice.supplier_name|length > 15 %}...{% endif %}</td>
+                                <td>${{ "%.2f"|format(invoice.amount) }}</td>
+                                <td>
+                                    {% if invoice.due_date != 'N/A' %}
+                                        {% set today = moment().format('YYYY-MM-DD') if moment else '2024-01-01' %}
+                                        <span class="badge bg-{{ 'danger' if invoice.due_date < today else 'warning' }}">
+                                            {{ invoice.due_date }}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">N/A</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Status Distribution -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-donut"></i> Payment Status Overview</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for status in analytics.payment_status %}
+                    <div class="col-md-3 text-center">
+                        <div class="p-3">
+                            <h4 class="text-{{ 'success' if status.status == 'paid' else 'warning' }}">
+                                {{ status.count }}
+                            </h4>
+                            <p class="mb-1">{{ status.status|title }} Invoices</p>
+                            <small class="text-muted">${{ "%.2f"|format(status.amount) }}</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Include external scripts -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+<link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
+
+<!-- Embed analytics data as JSON -->
+<script id="analytics-data" type="application/json">
+{{ analytics|tojson|safe }}
+</script>
+
+<!-- Analytics Charts and Tables Script -->
+<script>
+// Get analytics data from the JSON script tag
+const analyticsDataElement = document.getElementById('analytics-data');
+const analyticsData = JSON.parse(analyticsDataElement.textContent);
+
+// Daily Sales Chart
+const dailySalesCtx = document.getElementById('dailySalesChart').getContext('2d');
+const dailySalesChart = new Chart(dailySalesCtx, {
+    type: 'line',
+    data: {
+        labels: analyticsData.daily_sales.map(item => item.date).reverse(),
+        datasets: [{
+            label: 'Daily Sales ($)',
+            data: analyticsData.daily_sales.map(item => item.sales).reverse(),
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            tension: 0.1
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    callback: function(value) {
+                        return '$' + value.toFixed(2);
+                    }
+                }
+            }
+        }
+    }
+});
+
+// Payment Methods Chart
+const paymentMethodsCtx = document.getElementById('paymentMethodsChart').getContext('2d');
+const paymentMethodsChart = new Chart(paymentMethodsCtx, {
+    type: 'doughnut',
+    data: {
+        labels: ['Cash', 'Credit', 'NETS', 'NETS QR'],
+        datasets: [{
+            data: [
+                analyticsData.payment_methods.cash,
+                analyticsData.payment_methods.credit,
+                analyticsData.payment_methods.nets,
+                analyticsData.payment_methods.nets_qr
+            ],
+            backgroundColor: [
+                '#28a745',
+                '#17a2b8',
+                '#ffc107',
+                '#6f42c1'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+
+// Monthly Revenue Chart
+const monthlyRevenueCtx = document.getElementById('monthlyRevenueChart').getContext('2d');
+const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthlyRevenueChart = new Chart(monthlyRevenueCtx, {
+    type: 'bar',
+    data: {
+        labels: analyticsData.monthly_revenue.map(item => `${monthNames[item.month-1]} ${item.year}`).reverse(),
+        datasets: [{
+            label: 'Monthly Revenue ($)',
+            data: analyticsData.monthly_revenue.map(item => item.revenue).reverse(),
+            backgroundColor: 'rgba(54, 162, 235, 0.8)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    callback: function(value) {
+                        return '$' + value.toFixed(2);
+                    }
+                }
+            }
+        }
+    }
+});
+
+// Auto-refresh data every 5 minutes
+setInterval(function() {
+    fetch('/api/analytics')
+        .then(response => response.json())
+        .then(data => {
+            // Update charts with new data
+            console.log('Analytics data refreshed');
+        })
+        .catch(error => console.error('Error refreshing data:', error));
+}, 300000); // 5 minutes
+
+// Initialize DataTables when DOM is ready
+$(document).ready(function() {
+    // Initialize DataTables for interactive sorting/filtering
+    $('#suppliersTable').DataTable({
+        "pageLength": 5,
+        "lengthChange": false,
+        "searching": false,
+        "info": false
+    });
+    
+    $('#itemsTable').DataTable({
+        "pageLength": 5,
+        "lengthChange": false,
+        "searching": false,
+        "info": false
+    });
+});
+</script>
+{% endblock %}
