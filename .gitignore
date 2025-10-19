@@ -73,3 +73,6 @@ ubuntu@*
 product_price_revision.xlsx
 product_prices_revised.csv
 product_prices_revised.xlsx
+
+# Nested git repositories
+productAgent - IRONHEART/
