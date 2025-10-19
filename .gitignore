@@ -76,3 +76,33 @@ product_prices_revised.xlsx
 
 # Nested git repositories
 productAgent - IRONHEART/
+
+# Root-level duplicate directories (all code is in InventoryManagement/)
+/daily_book_closing_images/
+/dd_transactionDetails/
+/docs/
+/gdrive_invoices/
+/orderRecommendations/
+/sales_data/
+/templates/
+/uob_emails/
+/zohoForms/
+
+# Root-level duplicate files (all code is in InventoryManagement/)
+/app.py
+/automated_scheduler.py
+/create_cash_denomination_table.py
+/create_systemd_service.sh
+/dailyBookClosing.py
+/daily_auto_updater.py
+/dd_sales_report.py
+/salesDataProcessor.py
+/start_scheduler.sh
+/status_scheduler.sh
+/stockSentinel.py
+/stockSentinel_staging.py
+/stop_scheduler.sh
+/telegramBot.py
+/uob_payment_emails.py
+/update_inventory.py
+/requirements.txt
